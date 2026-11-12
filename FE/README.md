@@ -1,51 +1,37 @@
-# mock_project_rw100
+# MiniSocial Network - Frontend
 
-## Mini Social Network
-
+## Giới thiệu
 Dự án xây dựng một mạng xã hội mini, cho phép người dùng đăng bài viết, tương tác và kết nối với những người dùng khác.
 
-### Frontend Technologies
-- ReactJS
+## Công nghệ
+- React 19 + Vite
 - JavaScript
-- HTML5
-- CSS3
+- HTML5, CSS3
 - React Router DOM
-- LocalStorage
+- LocalStorage (dữ liệu demo trên trình duyệt)
 
-### Frontend Features
+## Các chức năng chính
+- Đăng nhập, đăng ký, xác thực email, quên và đặt lại mật khẩu
+- Bảng tin, tạo/chỉnh sửa/xóa/lưu/chia sẻ/báo cáo bài viết
+- Bình luận bài viết
+- Hồ sơ cá nhân, chỉnh sửa hồ sơ, đổi mật khẩu
+- Tìm kiếm người dùng
+- Lời mời kết bạn, gợi ý kết bạn
+- Chặn người dùng
+- Thông báo, bài viết đã lưu
+- Tin, khám phá, tin nhắn (bản demo giao diện)
 
-- Login and Register
-- Email Verification
-- Forgot Password and Reset Password
-- News Feed
-- Create and View Posts
-- User Profile
-- Edit Profile
-- Friend Requests
-- Friend Suggestions
-- Search Users
-- Notifications
-- Saved Posts
-- Blocked Users
-- Change Password
+## Cách chạy dự án
+1. Mở terminal tại thư mục `FE`.
+2. Chạy lệnh:
 
-### How to Run
+   `npm install`
 
-1. Clone the repository.
-2. Install dependencies:
+3. Chạy lệnh:
 
-```bash
-npm install
-```
+   `npm run dev`
 
-3. Start the development server:
+4. Mở địa chỉ Local được Vite hiển thị trên terminal.
 
-```bash
-npm run dev
-```
-
-4. Open the local URL displayed in the terminal.
-
-### Project Scope
-
-Frontend implementation of the Mini Social Network project.
+## Lưu ý
+Đây là frontend demo. Các thao tác xác thực và dữ liệu chưa kết nối Backend/API. Một số nội dung sử dụng dữ liệu mẫu hoặc LocalStorage trên trình duyệt hiện tại.
