@@ -4258,6 +4258,7 @@
 }
 
 
+
 /* ===== MiniSocial refreshed visual system ===== */
 :root {
   font-family: Inter, "Segoe UI", Arial, sans-serif;
@@ -4421,3 +4422,4 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .story-art { height:540px;max-height:70vh;border-radius:12px;display:grid;place-items:center;color:white;font-size:28px;font-weight:800;margin-bottom:14px; }
 .modal-close { position:absolute;right:22px;top:20px;border:0;border-radius:50%;width:34px;height:34px;background:#fff;font-size:24px;cursor:pointer; }
 @media(max-width:700px){.community-page{padding:22px 12px}.message-layout{grid-template-columns:1fr}.message-contacts{border-right:0;border-bottom:1px solid #edf0f5}.message-contacts>button{display:inline-flex;width:auto}.message-list{min-height:280px}}
+
