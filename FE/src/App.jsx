@@ -22,6 +22,7 @@ import FriendSuggestions from "./Pages/social/FriendSuggestions";
 import BlockedUsers from "./Pages/social/BlockedUsers";
 import Notifications from "./Pages/notification/Notifications";
 import Reports from "./Pages/admin/Reports";
+import { Stories, Explore, Messages } from "./Pages/CommunityPages.jsx";
 import "./App.css";
 
 function App() {
@@ -37,14 +38,15 @@ function App() {
         <Route path="/profile/edit" element={<EditProfile />} />
         <Route path="/change-password" element={<ChangePassword />}/>
         <Route path="/feed" element={<PostFeed />} />
-        <Route path="/saved-posts" element={<SavedPosts />} />
+        <Route path="/stories" element={<Stories />} />
+        <Route path="/explore" element={<Explore />} />
+        <Route path="/messages" element={<Messages />} />
         <Route path="/saved-posts" element={<SavedPosts />} />
         <Route path="/search-users" element={<SearchUsers />} />
         <Route path="/friend-requests" element={<FriendRequests />} />
         <Route path="/friend-suggestions" element={<FriendSuggestions />}/>
         <Route path="/blocked-users" element={<BlockedUsers />} />
         <Route path="/notifications" element={<Notifications />} />
-        <Route path="/blocked-users" element={<BlockedUsers />} />
         <Route path="/admin/reports" element={<Reports />} />
 
         <Route path="*" element={<Navigate to="/login" />} />
