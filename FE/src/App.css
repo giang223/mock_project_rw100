@@ -4423,3 +4423,1668 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .modal-close { position:absolute;right:22px;top:20px;border:0;border-radius:50%;width:34px;height:34px;background:#fff;font-size:24px;cursor:pointer; }
 @media(max-width:700px){.community-page{padding:22px 12px}.message-layout{grid-template-columns:1fr}.message-contacts{border-right:0;border-bottom:1px solid #edf0f5}.message-contacts>button{display:inline-flex;width:auto}.message-list{min-height:280px}}
 
+
+/* =========================
+   USER LAYOUT - GIAO DIEN CHUNG
+========================= */
+
+.user-layout {
+  min-height: 100vh;
+  background: #f0f2f5;
+  padding-top: 65px;
+}
+
+.user-layout-main {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 25px;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 25px 20px;
+  align-items: start;
+}
+
+.user-layout-main .facebook-sidebar {
+  position: sticky;
+  top: 85px;
+}
+
+.user-page-content {
+  min-width: 0;
+  min-height: calc(100vh - 115px);
+}
+
+.user-page-content .profile-page {
+  min-height: auto;
+  padding: 15px 10px;
+}
+
+@media (max-width: 900px) {
+  .user-layout-main {
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 15px;
+  }
+}
+
+@media (max-width: 650px) {
+  .user-layout-main {
+    display: block;
+    padding: 15px 10px;
+  }
+
+  .user-layout-main .facebook-sidebar {
+    display: none;
+  }
+}
+
+/* FEED - BỐ CỤC SAU KHI DÙNG HEADER VÀ SIDEBAR CHUNG */
+
+.feed-content-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 680px) minmax(210px, 280px);
+  justify-content: center;
+  gap: 25px;
+  width: 100%;
+  padding: 10px 0;
+  align-items: start;
+}
+
+.feed-content-layout .facebook-feed {
+  min-width: 0;
+}
+
+.feed-content-layout .facebook-right-sidebar {
+  position: sticky;
+  top: 85px;
+}
+
+@media (max-width: 1050px) {
+  .feed-content-layout {
+    grid-template-columns: minmax(0, 680px);
+  }
+
+  .feed-content-layout .facebook-right-sidebar {
+    display: none;
+  }
+}
+
+/* MSN LOGO */
+.msn-logo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
+  font-size: 27px;
+  font-weight: 800;
+  color: #1769e0;
+  letter-spacing: -1px;
+  white-space: nowrap;
+}
+
+.msn-butterfly {
+  font-size: 30px;
+  line-height: 1;
+}
+
+/* SIDEBAR MSN - THANH ĐIỀU HƯỚNG BÊN TRÁI */
+
+.facebook-sidebar {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+}
+
+.sidebar-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.facebook-sidebar .sidebar-menu {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  color: #333;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.facebook-sidebar .sidebar-menu:hover {
+  background: #e4eaf5;
+}
+
+.facebook-sidebar .sidebar-menu.active {
+  background: #e3edff;
+  color: #1769e0;
+  font-weight: 700;
+}
+
+.sidebar-icon {
+  width: 28px;
+  flex-shrink: 0;
+  font-size: 21px;
+  text-align: center;
+}
+
+.facebook-sidebar .sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 60px;
+  margin-bottom: 15px;
+  padding: 8px 14px;
+  color: #252525;
+  text-decoration: none;
+}
+
+.sidebar-heading {
+  padding: 0 14px;
+  color: #65676b;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+
+/* =====================================================
+   BALSAMIQ USER LAYOUT - HEADER, SIDEBAR & PROFILE
+   Các quy tắc này ghi đè những style cũ bị trùng lặp phía trên.
+===================================================== */
+.facebook-layout.user-layout {
+  min-height: 100vh;
+  padding-top: 48px;
+  background: #f3f4f6;
+}
+
+.user-layout .facebook-topbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 1000;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-bottom: 1px solid #d9dce2;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+
+.user-layout .topbar-left {
+  width: auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.user-layout .facebook-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #174f9e;
+  font-size: 27px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.user-layout .msn-butterfly {
+  font-size: 26px;
+}
+
+.user-layout .topbar-search {
+  width: min(280px, 30vw);
+  height: 32px;
+  padding: 0 13px;
+  border: 1px solid #d5d9e0;
+  border-radius: 18px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+}
+
+.user-layout .topbar-right {
+  width: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.user-layout .topbar-action {
+  position: relative;
+  width: 30px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  text-decoration: none;
+  font-size: 23px;
+}
+
+.user-layout .topbar-notification-count {
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #e11d48;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.user-layout .topbar-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: #6554e8;
+  color: #fff;
+  font-size: 15px;
+}
+
+.user-layout .topbar-account-menu {
+  margin-left: -12px;
+  color: #333;
+  text-decoration: none;
+  font-size: 18px;
+}
+
+.user-layout .user-layout-main {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 24px;
+  width: 100%;
+  max-width: 1600px;
+  min-height: calc(100vh - 48px);
+  margin: 0 auto;
+  padding: 0 18px;
+  align-items: stretch;
+}
+
+.user-layout .facebook-sidebar {
+  position: sticky;
+  top: 48px;
+  align-self: start;
+  width: 180px;
+  height: calc(100vh - 48px);
+  min-height: 560px;
+  padding: 18px 0 14px;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-right: 1px solid #e2e5e9;
+}
+
+.user-layout .sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  margin: 0 8px 12px;
+  padding: 5px 8px;
+  color: #242424;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.user-layout .sidebar-avatar {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  font-size: 14px;
+  background: #6554e8;
+}
+
+.user-layout .sidebar-user strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.user-layout .sidebar-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 8px;
+}
+
+.user-layout .facebook-sidebar .sidebar-menu {
+  width: 100%;
+  min-height: 38px;
+  height: 38px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 5px;
+  color: #292d33;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.user-layout .facebook-sidebar .sidebar-menu:hover {
+  background: #f0f1f3;
+}
+
+.user-layout .facebook-sidebar .sidebar-menu.active {
+  background: #e5e7eb;
+  color: #292d33;
+  font-weight: 600;
+}
+
+.user-layout .sidebar-icon {
+  width: 17px;
+  flex: 0 0 17px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.user-layout .sidebar-logout {
+  width: calc(100% - 34px);
+  min-height: 34px;
+  margin: auto 17px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid #555;
+  border-radius: 5px;
+  background: #fff;
+  color: #222;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.user-layout .sidebar-logout:hover {
+  background: #f2f2f2;
+}
+
+.user-layout .user-page-content {
+  min-width: 0;
+  min-height: calc(100vh - 48px);
+  padding: 22px 18px 35px;
+}
+
+/* PROFILE */
+.user-layout .profile-page.profile-design {
+  min-height: calc(100vh - 70px);
+  padding: 0;
+  background: #f3f4f6;
+}
+
+.profile-cover-card {
+  max-width: 1120px;
+  margin: 0 auto 18px;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 0 0 7px 7px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.07);
+}
+
+.profile-cover {
+  height: 190px;
+  background: #cfd3da;
+  border-radius: 0 0 5px 5px;
+}
+
+.profile-identity {
+  position: relative;
+  min-height: 112px;
+  padding: 0 22px 14px 112px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.profile-avatar-overlap {
+  position: absolute;
+  left: 18px;
+  top: -38px;
+  width: 88px;
+  height: 88px;
+  margin: 0;
+  border: 3px solid #fff;
+  background: #a3aab5;
+  color: #fff;
+  font-size: 38px;
+}
+
+.profile-identity-text {
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.profile-identity-text h1 {
+  margin: 0 0 2px;
+  color: #222;
+  font-size: 19px;
+}
+
+.profile-identity-text p,
+.profile-identity-text span,
+.profile-identity-text small {
+  display: block;
+  margin: 3px 0;
+  color: #555;
+  font-size: 11px;
+}
+
+.profile-identity-text small strong {
+  color: #222;
+}
+
+.profile-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.profile-actions button,
+.profile-actions a {
+  min-height: 30px;
+  padding: 6px 13px;
+  border: 1px solid #c9cdd3;
+  border-radius: 5px;
+  background: #f5f6f7;
+  color: #222;
+  font-family: inherit;
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.profile-actions .profile-primary-action {
+  border-color: #1769d2;
+  background: #2675df;
+  color: #fff;
+  font-weight: 600;
+}
+
+.profile-actions .profile-more-action {
+  min-width: 32px;
+  padding: 5px;
+}
+
+.profile-tabs {
+  min-height: 42px;
+  padding: 0 18px;
+  display: flex;
+  align-items: stretch;
+  gap: 22px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.profile-tabs button {
+  padding: 0;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #343a40;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profile-tabs button.active {
+  border-bottom-color: #2474d8;
+  color: #1b5fac;
+}
+
+.profile-body-grid {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(230px, .8fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.profile-post-column,
+.profile-info-column {
+  min-width: 0;
+}
+
+.profile-compose-card,
+.profile-post-card,
+.profile-side-card,
+.profile-empty-card,
+.profile-tab-panel {
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #e3e6eb;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+
+.profile-compose-card {
+  display: grid;
+  grid-template-columns: 28px minmax(0,1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.profile-mini-avatar,
+.profile-friend span,
+.profile-friends-large span {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #a3aab5;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.profile-compose-link {
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: #f0f1f3;
+  color: #5b6068;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.profile-compose-options {
+  grid-column: 2;
+  color: #555;
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.profile-post-card {
+  padding: 14px 16px 8px;
+}
+
+.profile-post-header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.profile-post-header > div:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: #222;
+  font-size: 11px;
+}
+
+.profile-post-header small {
+  color: #777;
+  font-size: 10px;
+}
+
+.profile-post-menu {
+  margin-left: auto;
+  color: #666;
+}
+
+.profile-post-card > p {
+  margin: 14px 0;
+  color: #252525;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.profile-post-image {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  margin: 10px 0;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.profile-post-stats {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #e6e7e9;
+  color: #666;
+  font-size: 10px;
+}
+
+.profile-post-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 9px 0 5px;
+  text-align: center;
+}
+
+.profile-post-actions a {
+  color: #343a40;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.profile-side-card h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 13px;
+  color: #292d33;
+  font-size: 13px;
+}
+
+.profile-side-card h3 a,
+.profile-side-card h3 button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1769d2;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.profile-side-card p {
+  margin: 9px 0;
+  color: #444;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.profile-friend-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px 7px;
+}
+
+.profile-friend {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.profile-friend span {
+  width: 34px;
+  height: 34px;
+}
+
+.profile-friend small {
+  max-width: 100%;
+  color: #555;
+  font-size: 9px;
+  text-align: center;
+}
+
+.profile-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.profile-photo-grid img,
+.profile-photo-grid span {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  background: #d1d5db;
+  object-fit: cover;
+}
+
+.profile-tab-panel {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 22px;
+}
+
+.profile-tab-panel h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+}
+
+.profile-tab-panel dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 14px;
+}
+
+.profile-tab-panel dl div {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f8f9fb;
+}
+
+.profile-tab-panel dt {
+  margin-bottom: 5px;
+  color: #777;
+  font-size: 11px;
+}
+
+.profile-tab-panel dd {
+  margin: 0;
+  color: #222;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.profile-friends-large {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+}
+
+.profile-friends-large > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.profile-photos-large {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 10px;
+}
+
+.profile-photos-large img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 5px;
+}
+
+@media (max-width: 900px) {
+  .user-layout .user-layout-main {
+    grid-template-columns: 165px minmax(0,1fr);
+    gap: 14px;
+    padding: 0 10px;
+  }
+  .user-layout .facebook-sidebar {
+    width: 165px;
+  }
+  .user-layout .user-page-content {
+    padding: 16px 8px 28px;
+  }
+  .profile-body-grid {
+    grid-template-columns: minmax(0,1fr) 220px;
+    gap: 14px;
+  }
+  .profile-identity {
+    align-items: flex-start;
+    flex-direction: column;
+    padding-bottom: 14px;
+  }
+  .profile-actions {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 650px) {
+  .user-layout .user-layout-main {
+    display: block;
+    padding: 0 10px;
+  }
+  .user-layout .facebook-sidebar {
+    display: none;
+  }
+  .user-layout .topbar-search {
+    display: none;
+  }
+  .user-layout .user-page-content {
+    padding: 12px 0 25px;
+  }
+  .profile-cover {
+    height: 135px;
+  }
+  .profile-identity {
+    padding: 55px 14px 14px;
+  }
+  .profile-avatar-overlap {
+    top: -38px;
+    left: 14px;
+    width: 76px;
+    height: 76px;
+  }
+  .profile-body-grid {
+    grid-template-columns: 1fr;
+  }
+  .profile-info-column {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .profile-tabs {
+    gap: 15px;
+    overflow-x: auto;
+  }
+  .profile-tab-panel dl,
+  .profile-friends-large {
+    grid-template-columns: 1fr;
+  }
+  .profile-photos-large {
+    grid-template-columns: repeat(3, minmax(0,1fr));
+  }
+}
+
+/* =============================================
+   MSN FEED - FINAL OVERRIDES
+   Ghi de cac quy tac cu, khong thay doi JSX
+   ============================================= */
+
+.user-layout .feed-content-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  align-items: start;
+  gap: 22px;
+  width: 100%;
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 10px 0 28px;
+}
+
+.user-layout .feed-content-layout .facebook-feed {
+  width: 100%;
+  min-width: 0;
+}
+
+.user-layout .feed-content-layout .facebook-right-sidebar {
+  display: block;
+  position: sticky;
+  top: 68px;
+  width: 100%;
+  min-width: 0;
+  max-height: calc(100vh - 82px);
+  overflow-y: auto;
+  padding: 8px 4px 18px;
+  scrollbar-width: thin;
+}
+
+/* Header: logo/search ben trai, cac thao tac ben phai */
+.user-layout .facebook-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.user-layout .topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.user-layout .topbar-search {
+  width: min(390px, 38vw);
+  max-width: 390px;
+  min-width: 190px;
+  flex: 0 1 390px;
+}
+
+.user-layout .topbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.user-layout .topbar-notification,
+.user-layout .topbar-message {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f0f2f5;
+  text-decoration: none;
+}
+
+/* Stories: giu 5 the dong deu, ten tin o sat day the */
+.user-layout .stories-container {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
+.user-layout .story-card {
+  height: 175px;
+  min-width: 0;
+  border-radius: 12px;
+}
+
+.user-layout .story-card > strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-layout .story-card:not(.create-story) {
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.user-layout .story-card:not(.create-story) > span {
+  align-self: center;
+  margin: auto 0;
+}
+
+/* Khung tao bai viet */
+.user-layout .create-post-card {
+  width: 100%;
+  min-width: 0;
+}
+
+.user-layout .create-post-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.user-layout .create-post-options .create-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 5px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #65676b;
+  font-size: 13px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.user-layout .create-post-options .create-option:hover {
+  background: #f0f2f5;
+}
+
+/* Cot phai: hien thi day du goi y va online */
+.user-layout .right-sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.user-layout .right-sidebar-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.user-layout .right-sidebar-heading > button {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: #1877f2;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.user-layout .suggestion-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 0;
+}
+
+.user-layout .suggestion-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.user-layout .suggestion-info strong {
+  display: block;
+  margin: 1px 0 3px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.user-layout .suggestion-info p {
+  margin: 0 0 7px;
+  color: #777;
+  font-size: 11px;
+}
+
+.user-layout .add-friend-button {
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: #e7f0ff;
+  color: #1877f2;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.user-layout .contact-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 0;
+  font-size: 12px;
+}
+
+.user-layout .contact-item span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-layout .contact-avatar {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+}
+
+.user-layout .sidebar-divider {
+  margin: 14px 0;
+}
+
+/* Tablet: feed tren, cot phai xuong duoi; khong an mat */
+@media (max-width: 1100px) {
+  .user-layout .feed-content-layout {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 760px;
+    gap: 18px;
+  }
+
+  .user-layout .feed-content-layout .facebook-right-sidebar {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 650px) {
+  .user-layout .facebook-topbar {
+    gap: 8px;
+    padding-right: 10px;
+  }
+
+  .user-layout .topbar-left {
+    gap: 8px;
+  }
+
+  .user-layout .topbar-search {
+    display: none;
+  }
+
+  .user-layout .topbar-right {
+    gap: 6px;
+  }
+
+  .user-layout .stories-container {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    padding-bottom: 5px;
+  }
+
+  .user-layout .story-card {
+    flex: 0 0 118px;
+    height: 160px;
+    scroll-snap-align: start;
+  }
+
+  .user-layout .create-post-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .user-layout .create-post-options .create-option {
+    font-size: 11px;
+  }
+
+  .user-layout .feed-content-layout .facebook-right-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* =====================================================
+   MSN - CAN BANG LAI BO CUC THEO YEU CAU
+   Ghi de cac quy tac cu, giu nguyen JSX va chuc nang
+   ===================================================== */
+
+/* Header: logo ben trai, tim kiem o GIUA, thao tac ben phai */
+.user-layout .facebook-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 24px;
+  background: #fff;
+}
+
+.user-layout .topbar-left {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.user-layout .facebook-logo {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.user-layout .topbar-search {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: block;
+  width: min(520px, 38vw);
+  max-width: 520px;
+  min-width: 280px;
+  height: 40px;
+  margin: 0;
+}
+
+.user-layout .topbar-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  width: auto;
+  gap: 12px;
+  margin-left: auto;
+}
+
+/* Ba khu vuc chinh: sidebar | feed | cot phai, su dung het chieu ngang */
+.user-layout .user-layout-main {
+  display: grid;
+  grid-template-columns: minmax(220px, 18vw) minmax(0, 1fr);
+  gap: 24px;
+  width: 100%;
+  max-width: none;
+  min-height: calc(100vh - 56px);
+  margin: 0;
+  padding: 0 24px;
+  align-items: start;
+}
+
+.user-layout .facebook-sidebar {
+  position: sticky;
+  top: 56px;
+  width: 100%;
+  height: calc(100vh - 56px);
+  min-height: 560px;
+  padding: 22px 8px;
+  background: transparent;
+  border-right: 0;
+}
+
+.user-layout .facebook-sidebar .sidebar-menu {
+  width: 100%;
+}
+
+/* Feed va cot phai cung mo rong, khong de khoang trong lon ben phai */
+.user-layout .feed-content-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(270px, 22vw, 350px);
+  align-items: start;
+  gap: 24px;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 24px 0 32px;
+}
+
+.user-layout .feed-content-layout .facebook-feed {
+  width: 100%;
+  min-width: 0;
+}
+
+.user-layout .feed-content-layout .facebook-right-sidebar {
+  display: block;
+  position: sticky;
+  top: 76px;
+  width: 100%;
+  min-width: 0;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  padding: 8px 4px 20px;
+}
+
+/* Stories: 5 the cung hang, nut mui ten nam de len ben phai */
+.user-layout .stories-container {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin: 0 0 22px;
+  padding: 0;
+  overflow: visible;
+}
+
+.user-layout .stories-container .story-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  height: 190px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.user-layout .stories-container .create-story {
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 0 14px;
+}
+
+.user-layout .stories-container .create-story .story-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 145px;
+  flex: 1 1 auto;
+  border-radius: 0;
+}
+
+.user-layout .stories-container .story-card:not(.create-story) {
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 12px;
+}
+
+.user-layout .stories-container .story-card:not(.create-story) > span {
+  align-self: center;
+  margin: auto 0;
+  font-size: 38px;
+}
+
+.user-layout .stories-container .story-card > strong {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-layout .stories-container .stories-next-button {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  right: -14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid #e5e7eb;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,.14);
+  cursor: pointer;
+}
+
+/* O dang bai luon nam DUOI hang Stories, la mot the rieng */
+.user-layout .create-post-card {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 20px;
+  padding: 18px;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.user-layout .create-post-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+}
+
+.user-layout .create-post-top form {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.user-layout .create-post-top textarea {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+}
+
+.user-layout .create-post-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 0 14px;
+}
+
+.user-layout .create-post-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  padding-top: 10px;
+  border-top: 1px solid #e8e8e8;
+}
+
+.user-layout .create-post-options .create-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #555;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* Cot phai: giu du 6 goi y va 8 tai khoan online */
+.user-layout .right-sidebar-section {
+  width: 100%;
+  min-width: 0;
+}
+
+.user-layout .suggestion-item,
+.user-layout .contact-item {
+  width: 100%;
+}
+
+/* Responsive: tren tablet dua cot phai xuong duoi, khong an */
+@media (max-width: 1100px) {
+  .user-layout .user-layout-main {
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 16px;
+    padding: 0 16px;
+  }
+
+  .user-layout .feed-content-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .user-layout .feed-content-layout .facebook-right-sidebar {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+@media (max-width: 700px) {
+  .user-layout .facebook-topbar {
+    padding: 0 12px;
+  }
+
+  .user-layout .topbar-search {
+    position: static;
+    transform: none;
+    width: min(42vw, 260px);
+    min-width: 120px;
+    margin-left: 10px;
+  }
+
+  .user-layout .user-layout-main {
+    display: block;
+    padding: 0 12px;
+  }
+
+  .user-layout .facebook-sidebar {
+    display: none;
+  }
+
+  .user-layout .stories-container {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 6px;
+  }
+
+  .user-layout .stories-container .story-card {
+    flex: 0 0 132px;
+    height: 170px;
+  }
+
+  .user-layout .create-post-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .user-layout .feed-content-layout .facebook-right-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+
+/* SIDEBAR - CĂN ĐỀU MENU VÀ LOG OUT */
+
+.user-layout .facebook-sidebar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: calc(100vh - 48px);
+  padding: 28px 8px 20px;
+  box-sizing: border-box;
+}
+
+.user-layout .sidebar-navigation {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+}
+
+.user-layout .facebook-sidebar .sidebar-menu {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.user-layout .sidebar-icon {
+  width: 22px;
+  min-width: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-layout .sidebar-logout-container {
+  margin-top: auto;
+  padding: 16px 0 0;
+  border-top: 1px solid #e0e3e8;
+}
+
+.user-layout .sidebar-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #333;
+  font-size: 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.user-layout .sidebar-logout:hover {
+  background: #e5e7eb;
+  color: #dc2626;
+}
+
+
+/* THANH ĐĂNG BÀI MỘT DÒNG */
+.create-post-card {
+  width: 100%;
+  padding: 14px 18px;
+  margin-bottom: 18px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.create-post-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.create-post-form {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  gap: 10px;
+}
+
+.create-post-input {
+  flex: 1;
+  width: 100%;
+  height: 42px;
+  padding: 0 16px;
+  border: none;
+  outline: none;
+  border-radius: 24px;
+  background: #f0f2f5;
+  font-size: 14px;
+}
+
+.create-post-input:focus {
+  background: #e9edf3;
+}
+
+.create-post-submit {
+  height: 38px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 20px;
+  background: #1877f2;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.image-upload-row {
+  margin: 10px 0 0 54px;
+}
+
+.image-upload-row .create-option {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  color: #606770;
+  font-size: 13px;
+}
+
+/* STORIES */
+.stories-container {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 20px;
+  overflow-x: auto;
+  position: relative;
+}
+
+.story-card {
+  min-width: 0;
+  height: 190px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.stories-next-button {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  .stories-container {
+    grid-template-columns: repeat(3, minmax(110px, 1fr));
+  }
+
+  .story-card {
+    height: 155px;
+  }
+}

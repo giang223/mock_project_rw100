@@ -29,35 +29,43 @@ import Reports from "./Pages/admin/Reports";
 
 import { Stories, Explore, Messages } from "./Pages/CommunityPages.jsx";
 
+import UserLayout from "./Components/UserLayout";
+
 import "./App.css";
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* CÁC TRANG AUTH - KHÔNG DÙNG LAYOUT CHUNG */}
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
 
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/profile/edit" element={<EditProfile />} />
-        <Route path="/change-password" element={<ChangePassword />} />
+        {/* CÁC TRANG USER - DÙNG HEADER VÀ SIDEBAR CHUNG */}
+        <Route element={<UserLayout />}>
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/profile/edit" element={<EditProfile />} />
+          <Route path="/change-password" element={<ChangePassword />} />
 
-        <Route path="/feed" element={<PostFeed />} />
-        <Route path="/saved-posts" element={<SavedPosts />} />
+          <Route path="/feed" element={<PostFeed />} />
+          <Route path="/saved-posts" element={<SavedPosts />} />
 
-        <Route path="/stories" element={<Stories />} />
-        <Route path="/explore" element={<Explore />} />
-        <Route path="/messages" element={<Messages />} />
+          <Route path="/stories" element={<Stories />} />
+          <Route path="/explore" element={<Explore />} />
+          <Route path="/messages" element={<Messages />} />
 
-        <Route path="/search-users" element={<SearchUsers />} />
-        <Route path="/friend-requests" element={<FriendRequests />} />
-        <Route path="/friend-suggestions" element={<FriendSuggestions />} />
-        <Route path="/blocked-users" element={<BlockedUsers />} />
+          <Route path="/search-users" element={<SearchUsers />} />
+          <Route path="/friend-requests" element={<FriendRequests />} />
+          <Route path="/friend-suggestions" element={<FriendSuggestions />} />
+          <Route path="/blocked-users" element={<BlockedUsers />} />
 
-        <Route path="/notifications" element={<Notifications />} />
+          <Route path="/notifications" element={<Notifications />} />
+        </Route>
+
+        {/* TRANG ADMIN - GIỮ RIÊNG */}
         <Route path="/admin/reports" element={<Reports />} />
 
         <Route path="*" element={<Navigate to="/login" />} />
