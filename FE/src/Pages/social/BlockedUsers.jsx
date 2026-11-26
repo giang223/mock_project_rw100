@@ -62,7 +62,6 @@ function isSameUser(first, second) {
 }
 
 // ĐỊNH DẠNG NGÀY CHẶN
-// ĐỊNH DẠNG NGÀY CHẶN
 function formatBlockedDate(value) {
   if (!value) return "";
 
@@ -230,7 +229,12 @@ function BlockedUsers() {
           className="blocked-users-back"
         >
           ← Quay lại bảng tin
-        </Link>
+        </Link><Link
+  to="/profile"
+  className="blocked-users-back"
+>
+  ← Quay lại trang cá nhân
+</Link>
       </header>
 
       <main className="blocked-users-container">
@@ -251,6 +255,32 @@ function BlockedUsers() {
             <span>người đã chặn</span>
           </div>
         </div>
+
+{/* ĐIỀU HƯỚNG CÀI ĐẶT TÀI KHOẢN */}
+<nav
+  className="friends-top-navigation"
+  aria-label="Điều hướng cài đặt tài khoản"
+>
+  <Link to="/profile">
+    👤 Trang cá nhân
+  </Link>
+
+  <Link to="/profile/edit">
+    ✏️ Chỉnh sửa thông tin
+  </Link>
+
+  <Link to="/change-password">
+    🔒 Đổi mật khẩu
+  </Link>
+
+  <Link
+    to="/blocked-users"
+    className="active"
+    aria-current="page"
+  >
+    🚫 Đã chặn
+  </Link>
+</nav>
 
         {/* THÔNG TIN */}
         <div className="blocked-users-info">
@@ -409,21 +439,6 @@ function BlockedUsers() {
             ))}
           </div>
         )}
-
-        {/* LIÊN KẾT */}
-        <div className="blocked-users-footer">
-          <Link to="/friend-suggestions">
-            Gợi ý kết bạn
-          </Link>
-
-          <Link to="/search-users">
-            Tìm kiếm người dùng
-          </Link>
-
-          <Link to="/friend-requests">
-            Lời mời kết bạn
-          </Link>
-        </div>
       </main>
     </div>
   );

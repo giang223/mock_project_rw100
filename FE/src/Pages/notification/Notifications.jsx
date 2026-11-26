@@ -339,58 +339,56 @@ if (activeType === "friend") {
     );
   };
 
-  // MỞ THÔNG BÁO
-  const handleOpenNotification = (item) => {
-    if (!item.read) {
-      const success = handleMarkRead(item.id);
+ // MỞ THÔNG BÁO
+const handleOpenNotification = (item) => {
+  // ĐÁNH DẤU ĐÃ ĐỌC
+  if (!item.read) {
+    const success = handleMarkRead(item.id);
 
-      if (!success) return;
-    }
+    if (!success) return;
+  }
 
-    // MỞ CHI TIẾT BÀI VIẾT
-    if (
-      item.postId !== null &&
-      item.postId !== undefined &&
-      item.postId !== ""
-    ) {
-      navigate(
-        `/feed?postId=${encodeURIComponent(
-          item.postId
-        )}`
-      );
+  // KIỂM TRA TƯƠNG TÁC BÀI VIẾT
+  const isPostInteraction = [
+    "like",
+    "comment",
+    "share",
+  ].includes(item.type);
 
-      return;
-    }
+  const hasPostId =
+    item.postId !== null &&
+    item.postId !== undefined &&
+    item.postId !== "";
 
-    // MỞ TRANG KẾT BẠN
-    if (isFriendNotification(item)) {
-      navigate("/friend-requests");
-      return;
-    }
+  // MỞ CHI TIẾT BÀI VIẾT
+  if (isPostInteraction && hasPostId) {
+    navigate(
+      `/feed?postId=${encodeURIComponent(item.postId)}`
+    );
 
-    // MỞ TRANG TIN NHẮN
-    if (item.type === "message") {
-      navigate("/messages");
-      return;
-    }
+    return;
+  }
 
-    // MỞ TRANG CÁ NHÂN
-    if (isCurrentUser(item)) {
-      navigate("/profile");
-      return;
-    }
+  // THÔNG BÁO HỆ THỐNG
+  if (item.type === "system") {
+    return;
+  }
 
-    if (
-      item.name &&
-      item.name !== "MiniSocial"
-    ) {
-      navigate(
-        `/profile?user=${encodeURIComponent(
-          item.name
-        )}`
-      );
-    }
-  };
+  // MỞ TRANG CÁ NHÂN CỦA MÌNH
+  if (isCurrentUser(item)) {
+    navigate("/profile");
+    return;
+  }
+
+  // MỞ TRANG CÁ NHÂN NGƯỜI KHÁC
+  const name = String(item.name || "").trim();
+
+  if (name && name !== "MiniSocial") {
+    navigate(
+      `/profile?user=${encodeURIComponent(name)}`
+    );
+  }
+};
 
   // XÓA BỘ LỌC
   const resetFilters = () => {
@@ -621,12 +619,18 @@ if (activeType === "friend") {
                   }}
                 >
                   <p>
-                    <strong>
-                      {displayName(item)}
-                    </strong>{" "}
+  {String(item.message || "").startsWith("Bạn ") ? (
+    item.message
+  ) : (
+    <>
+      <strong>
+        {displayName(item)}
+      </strong>{" "}
 
-                    {item.message}
-                  </p>
+      {item.message}
+    </>
+  )}
+</p>
 
                   <span className="notification-time">
                     {formatNotificationTime(

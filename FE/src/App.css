@@ -9444,3 +9444,474 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .change-password-card .password-reset-button:hover {
   background: #f1f5f9;
 }
+
+/* =========================================
+   SIDEBAR - MENU BẠN BÈ
+========================================= */
+
+.sidebar-friends-group {
+  width: 100%;
+}
+
+.sidebar-friends-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-friends-toggle:hover {
+  background: #e9edf3;
+}
+
+.sidebar-friends-toggle.active {
+  background: #e7f0ff;
+  color: #1877f2;
+}
+
+.sidebar-friends-arrow {
+  margin-left: auto;
+  font-size: 16px;
+  color: #65676b;
+  transition: transform 0.2s ease;
+}
+
+.sidebar-friends-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.sidebar-friends-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 5px 0 8px 22px;
+  padding-left: 10px;
+  border-left: 2px solid #e1e5eb;
+}
+
+.sidebar-friends-submenu .sidebar-menu {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 10px 12px;
+  font-size: 14px;
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.sidebar-friends-submenu .sidebar-icon {
+  font-size: 17px;
+  flex-shrink: 0;
+}
+
+.sidebar-friends-submenu .sidebar-menu:hover {
+  background: #e9edf3;
+}
+
+.sidebar-friends-submenu .sidebar-menu.active {
+  background: #e7f0ff;
+  color: #1877f2;
+  font-weight: 600;
+}
+/* =========================================
+   THANH ĐIỀU HƯỚNG BẠN BÈ
+========================================= */
+
+.friends-top-navigation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px;
+  margin: 20px 0;
+  background: #ffffff;
+  border: 1px solid #e4e6eb;
+  border-radius: 12px;
+}
+
+.friends-top-navigation a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px;
+  border-radius: 8px;
+  color: #65676b;
+  background: #f0f2f5;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: 0.2s ease;
+}
+
+.friends-top-navigation a:hover {
+  background: #e4e6eb;
+  color: #1877f2;
+}
+
+.friends-top-navigation a.active {
+  background: #e7f0ff;
+  color: #1877f2;
+}
+
+/* CĂN CHỈNH MENU CON SIDEBAR */
+
+.sidebar-friends-submenu .sidebar-menu {
+  font-size: 14px;
+  gap: 8px;
+  padding: 10px 8px;
+}
+
+.sidebar-friends-submenu .sidebar-menu span:last-child {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 600px) {
+  .friends-top-navigation {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .friends-top-navigation a {
+    flex: 1 1 40%;
+    padding: 10px;
+    font-size: 13px;
+  }
+}
+
+/* =========================================
+   PROFILE - CÀI ĐẶT TÀI KHOẢN
+========================================= */
+
+.profile-settings {
+  margin-top: 28px;
+  margin-bottom: 28px;
+  padding-top: 24px;
+  border-top: 1px solid #e4e6eb;
+}
+
+.profile-settings h3 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  color: #1c1e21;
+}
+
+.profile-settings-description {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: #65676b;
+}
+
+.profile-settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-setting-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: #1c1e21;
+  background: #f5f6f8;
+  transition: background 0.2s ease;
+}
+
+.profile-setting-item:hover {
+  background: #e7f0ff;
+  color: #1877f2;
+}
+
+.profile-setting-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #e4e6eb;
+  font-size: 20px;
+}
+
+.profile-setting-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.profile-setting-text strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.profile-setting-text small {
+  font-size: 13px;
+  color: #65676b;
+  line-height: 1.4;
+}
+
+.profile-setting-arrow {
+  margin-left: auto;
+  font-size: 26px;
+  color: #65676b;
+}
+
+@media (max-width: 600px) {
+  .profile-setting-item {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .profile-setting-icon {
+    width: 38px;
+    height: 38px;
+    font-size: 17px;
+  }
+}
+
+/* =========================================
+   CẢI THIỆN GIAO DIỆN TIN NHẮN
+========================================= */
+
+.message-layout {
+  border: none;
+  box-shadow: none;
+  background: #ffffff;
+  gap: 0;
+}
+
+.message-contacts {
+  border: none;
+  border-right: 1px solid #e5e7eb;
+  box-shadow: none;
+  background: #ffffff;
+}
+
+.message-conversation {
+  border: none;
+  box-shadow: none;
+  background: #ffffff;
+}
+
+.message-contact-list > button {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  border-radius: 10px;
+  margin-bottom: 4px;
+}
+
+.message-contact-list > button:hover {
+  background: #f3f4f6;
+}
+
+.message-contact-list > button.selected {
+  background: #e7f3ff;
+}
+
+.message-contacts-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.message-create-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-create-actions button {
+  width: 100%;
+  padding: 11px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #e7f3ff;
+  color: #1877f2;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.message-create-actions button:hover {
+  background: #dbeafe;
+}
+
+.message-list {
+  background: #ffffff;
+}
+
+.message-row {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
+.message-bubble {
+  border: none;
+  box-shadow: none;
+  border-radius: 18px;
+}
+
+.message-compose {
+  box-shadow: none;
+  border: none;
+  border-top: 1px solid #f0f0f0;
+}
+
+.message-empty-selection {
+  border: none;
+  box-shadow: none;
+}
+
+/* =========================================
+   POPUP TẠO NHÓM
+========================================= */
+
+.message-group-modal {
+  width: min(460px, calc(100vw - 32px));
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 15px 50px #00000026;
+}
+
+.message-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #eeeeee;
+}
+
+.message-group-header h2 {
+  font-size: 21px;
+  margin: 0;
+  color: #111827;
+}
+
+.message-group-header button {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: #f3f4f6;
+  color: #374151;
+  cursor: pointer;
+}
+
+.message-group-modal > label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.message-group-modal > input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  font-size: 14px;
+  outline: none;
+}
+
+.message-group-modal > input:focus {
+  border-color: #1877f2;
+}
+
+.message-group-modal h4 {
+  margin: 20px 0 6px;
+}
+
+.message-group-count {
+  color: #64748b;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.message-group-members {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.message-group-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.message-group-member:hover {
+  background: #f3f4f6;
+}
+
+.message-group-member strong {
+  flex: 1;
+  font-size: 14px;
+}
+
+.message-group-member input {
+  width: 18px;
+  height: 18px;
+  accent-color: #1877f2;
+  cursor: pointer;
+}
+
+.message-group-note {
+  margin-top: 15px;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.message-group-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.message-group-actions button {
+  padding: 11px 20px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.message-group-cancel {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.message-group-submit {
+  background: #1877f2;
+  color: #ffffff;
+}
+
+.message-group-submit:disabled {
+  background: #d1d5db;
+  color: #ffffff;
+  cursor: not-allowed;
+}

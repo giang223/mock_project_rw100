@@ -247,18 +247,21 @@ function FriendRequests() {
       );
 
     if (saveRequests(updated)) {
-      addNotification({
-        type: "friend",
-        name: "MiniSocial",
-        message:
-          `Bạn và ${request.name} hiện đã trở thành bạn bè.`,
-      });
+  addNotification({
+    type: "friend_accept",
+    name: request.name,
+    username: request.username,
+    avatar: request.avatar || "",
+    isMine: false,
+    message:
+      `Bạn và ${request.name} hiện đã trở thành bạn bè.`,
+  });
 
-      alert(
-        `Bạn và ${request.name} đã trở thành bạn bè!`
-      );
-    }
-  };
+  alert(
+    `Bạn và ${request.name} đã trở thành bạn bè!`
+  );
+}
+};
 
   // TỪ CHỐI LỜI MỜI
   const handleReject = (id) => {
@@ -459,6 +462,28 @@ function FriendRequests() {
             bạn bè của bạn.
           </p>
         </div>
+
+        {/* ĐIỀU HƯỚNG BẠN BÈ */}
+<nav
+  className="friends-top-navigation"
+  aria-label="Điều hướng bạn bè"
+>
+  <Link
+    to="/friend-requests"
+    className="active"
+    aria-current="page"
+  >
+    👥 Bạn bè
+  </Link>
+
+  <Link to="/friend-suggestions">
+    ✨ Gợi ý kết bạn
+  </Link>
+
+  <Link to="/search-users">
+    🔍 Tìm kiếm người dùng
+  </Link>
+</nav>
 
         {/* CÁC TAB */}
         <div className="friend-requests-tabs">
@@ -701,20 +726,7 @@ function FriendRequests() {
           )}
         </section>
 
-        {/* LIÊN KẾT */}
-        <div className="friend-requests-footer">
-          <Link to="/friend-suggestions">
-            Gợi ý kết bạn
-          </Link>
-
-          <Link to="/search-users">
-            Tìm kiếm người dùng
-          </Link>
-
-          <Link to="/blocked-users">
-            Người dùng đã chặn
-          </Link>
-        </div>
+       
       </main>
     </div>
   );
