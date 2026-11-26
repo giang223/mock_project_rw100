@@ -1,6 +1,6 @@
 
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom"; 
 import { addNotification } from "../notification/notificationUtils";
 
 const REQUESTS_KEY = "miniSocialFriendRequests";
@@ -68,7 +68,14 @@ function readStorage(key) {
 }
 
 function SearchUsers() {
-  const [keyword, setKeyword] = useState("");
+  
+  const [searchParams] = useSearchParams();
+  const [keyword, setKeyword] = useState(searchParams.get("q") || "");
+
+  useEffect(() => {
+    const query = searchParams.get("q") || "";
+    setKeyword(query);
+  }, [searchParams]);
   const [selectedUser, setSelectedUser] = useState(null);
 
   const [requests, setRequests] = useState(() =>
@@ -79,174 +86,358 @@ function SearchUsers() {
     readStorage(BLOCKED_KEY)
   );
 
-  // LƯU LỜI MỜI KẾT BẠN
-  useEffect(() => {
+  
+
+// LƯU DỮ LIỆU KẾT BẠN
+const saveRequests = (nextRequests) => {
+  try {
     localStorage.setItem(
       REQUESTS_KEY,
-      JSON.stringify(requests)
+      JSON.stringify(nextRequests)
     );
-  }, [requests]);
 
-  // LƯU DANH SÁCH NGƯỜI DÙNG ĐÃ CHẶN
-  useEffect(() => {
+    setRequests(nextRequests);
+
+    window.dispatchEvent(
+      new Event("miniSocialFriendRequestsUpdated")
+    );
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    alert("Không thể cập nhật lời mời kết bạn!");
+    return false;
+  }
+};
+
+// LƯU DANH SÁCH CHẶN
+const saveBlockedUsers = (nextBlockedUsers) => {
+  try {
     localStorage.setItem(
       BLOCKED_KEY,
-      JSON.stringify(blockedUsers)
-    );
-  }, [blockedUsers]);
-
-  // ĐỒNG BỘ KHI DỮ LIỆU THAY ĐỔI Ở TAB KHÁC
-  useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (event.key === REQUESTS_KEY) {
-        setRequests(readStorage(REQUESTS_KEY));
-      }
-
-      if (event.key === BLOCKED_KEY) {
-        setBlockedUsers(readStorage(BLOCKED_KEY));
-      }
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-
-    return () => {
-      window.removeEventListener(
-        "storage",
-        handleStorageChange
-      );
-    };
-  }, []);
-
-  // TÌM KIẾM NGƯỜI DÙNG
-  const filteredUsers = useMemo(() => {
-    const searchValue = keyword.trim().toLowerCase();
-
-    return users.filter(
-      (user) =>
-        user.name.toLowerCase().includes(searchValue) ||
-        user.username.toLowerCase().includes(searchValue)
-    );
-  }, [keyword]);
-
-  // KIỂM TRA TRẠNG THÁI KẾT BẠN
-  const getFriendStatus = (username) => {
-    const request = requests.find(
-      (item) => item.username === username
+      JSON.stringify(nextBlockedUsers)
     );
 
-    return request ? request.status : "none";
+    setBlockedUsers(nextBlockedUsers);
+
+    window.dispatchEvent(
+      new Event("miniSocialBlockedUsersUpdated")
+    );
+
+    return true;
+  } catch (error) {
+    console.error(error);
+    alert("Không thể cập nhật danh sách chặn!");
+    return false;
+  }
+};
+
+// ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
+useEffect(() => {
+  const refreshData = () => {
+    setRequests(readStorage(REQUESTS_KEY));
+    setBlockedUsers(readStorage(BLOCKED_KEY));
   };
 
-  // KIỂM TRA NGƯỜI DÙNG ĐÃ BỊ CHẶN
-  const isBlocked = (username) => {
-    return blockedUsers.some(
-      (user) => user.username === username
+  window.addEventListener(
+    "miniSocialFriendRequestsUpdated",
+    refreshData
+  );
+
+  window.addEventListener(
+    "miniSocialBlockedUsersUpdated",
+    refreshData
+  );
+
+  window.addEventListener("storage", refreshData);
+  window.addEventListener("focus", refreshData);
+
+  return () => {
+    window.removeEventListener(
+      "miniSocialFriendRequestsUpdated",
+      refreshData
+    );
+
+    window.removeEventListener(
+      "miniSocialBlockedUsersUpdated",
+      refreshData
+    );
+
+    window.removeEventListener(
+      "storage",
+      refreshData
+    );
+
+    window.removeEventListener(
+      "focus",
+      refreshData
     );
   };
+}, []);
+
+ // CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
+const normalizeText = (value) => {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .trim();
+};
+
+// TÌM KIẾM NGƯỜI DÙNG
+const filteredUsers = useMemo(() => {
+  const searchValue = normalizeText(keyword);
+
+  return users.filter((user) =>
+    normalizeText(
+      `${user.name} ${user.username} ${user.bio}`
+    ).includes(searchValue)
+  );
+}, [keyword]);
+
+  
+// SO SÁNH NGƯỜI DÙNG
+const isSameUser = (item, user) => {
+  if (!item || !user) return false;
+
+  if (item.username && user.username) {
+    return item.username === user.username;
+  }
+
+  return Boolean(item.name && user.name) &&
+    normalizeText(item.name) ===
+      normalizeText(user.name);
+};
+
+// KIỂM TRA TRẠNG THÁI KẾT BẠN
+const getFriendStatus = (username) => {
+  const user = users.find(
+    (item) => item.username === username
+  );
+
+  const request = requests.find(
+    (item) => isSameUser(item, user)
+  );
+
+  return request?.status || "none";
+};
+
+// KIỂM TRA NGƯỜI DÙNG ĐÃ BỊ CHẶN
+const isBlocked = (username) => {
+  const user = users.find(
+    (item) => item.username === username
+  );
+
+  return blockedUsers.some(
+    (item) => isSameUser(item, user)
+  );
+};
 
   // GỬI LỜI MỜI KẾT BẠN
-  const handleSendRequest = (user) => {
-    if (isBlocked(user.username)) {
-      alert("Bạn cần bỏ chặn người dùng này trước.");
-      return;
-    }
+const handleSendRequest = (user) => {
+  const currentRequests = readStorage(REQUESTS_KEY);
+  const currentBlocked = readStorage(BLOCKED_KEY);
 
-    const status = getFriendStatus(user.username);
+  if (
+    currentBlocked.some(
+      (item) => isSameUser(item, user)
+    )
+  ) {
+    alert("Bạn cần bỏ chặn người dùng này trước!");
+    return;
+  }
 
-    if (status === "sent") {
-      alert("Bạn đã gửi lời mời cho người này rồi.");
-      return;
-    }
+  const existingRequest = currentRequests.find(
+    (item) => isSameUser(item, user)
+  );
 
-    if (status === "received") {
-      alert(
-        "Người này đã gửi lời mời cho bạn. Hãy kiểm tra mục Bạn bè."
-      );
-      return;
-    }
+  if (existingRequest?.status === "sent") {
+    alert("Bạn đã gửi lời mời cho người này rồi!");
+    return;
+  }
 
-    if (status === "accepted") {
-      alert("Hai người đã là bạn bè.");
-      return;
-    }
+  if (existingRequest?.status === "received") {
+    alert("Người này đã gửi lời mời cho bạn!");
+    return;
+  }
 
-    const newRequest = {
-      id: Date.now(),
-      name: user.name,
-      username: user.username,
-      avatar: user.avatar,
-      mutualFriends: user.mutualFriends,
-      status: "sent",
-      createdAt: new Date().toISOString(),
-    };
+  if (existingRequest?.status === "accepted") {
+    alert("Hai người đã là bạn bè!");
+    return;
+  }
 
-    setRequests((prev) => [...prev, newRequest]);
-
-    addNotification({
-      type: "friend",
-      name: "Nguyễn Văn A",
-      message: `đã gửi lời mời kết bạn cho ${user.name}.`,
-    });
-
-    alert(`Đã gửi lời mời kết bạn đến ${user.name}.`);
+  const newRequest = {
+    id: Date.now(),
+    name: user.name,
+    username: user.username,
+    avatar: user.avatar,
+    color: user.color,
+    mutualFriends: user.mutualFriends,
+    status: "sent",
+    createdAt: new Date().toISOString(),
   };
 
-  // CHẶN NGƯỜI DÙNG
-  const handleBlockUser = (user) => {
-    if (isBlocked(user.username)) {
-      alert("Người dùng này đã bị chặn.");
-      return;
-    }
+  const nextRequests = [
+    ...currentRequests.filter(
+      (item) => !isSameUser(item, user)
+    ),
+    newRequest,
+  ];
 
-    const confirmed = window.confirm(
-      `Bạn có chắc chắn muốn chặn ${user.name}?`
-    );
+  if (!saveRequests(nextRequests)) return;
 
-    if (!confirmed) return;
+  addNotification({
+    type: "friend",
+    name: "Nguyễn Văn A",
+    isMine: true,
+    message: `đã gửi lời mời kết bạn cho ${user.name}.`,
+  });
 
-    const newBlockedUser = {
-      id: user.id,
-      name: user.name,
-      username: user.username,
-      avatar: user.avatar,
-      bio: user.bio,
-      color: user.color,
-      blockedAt: new Date().toLocaleDateString("vi-VN"),
-    };
+  alert(`Đã gửi lời mời kết bạn đến ${user.name}.`);
+};
 
-    setBlockedUsers((prev) => [...prev, newBlockedUser]);
+// HỦY LỜI MỜI KẾT BẠN
+const handleCancelRequest = (user) => {
+  const confirmed = window.confirm(
+    `Bạn có muốn hủy lời mời kết bạn với ${user.name}?`
+  );
 
-    // XÓA LỜI MỜI KẾT BẠN VỚI NGƯỜI BỊ CHẶN
-    setRequests((prev) =>
-      prev.filter(
-        (request) => request.username !== user.username
+  if (!confirmed) return;
+
+  const nextRequests = readStorage(
+    REQUESTS_KEY
+  ).filter(
+    (item) =>
+      !(
+        isSameUser(item, user) &&
+        item.status === "sent"
       )
+  );
+
+  if (saveRequests(nextRequests)) {
+    alert("Đã hủy lời mời kết bạn.");
+  }
+};
+
+// HỦY KẾT BẠN
+const handleUnfriend = (user) => {
+  const confirmed = window.confirm(
+    `Bạn có chắc chắn muốn hủy kết bạn với ${user.name}?`
+  );
+
+  if (!confirmed) return;
+
+  const nextRequests = readStorage(
+    REQUESTS_KEY
+  ).filter(
+    (item) =>
+      !(
+        isSameUser(item, user) &&
+        item.status === "accepted"
+      )
+  );
+
+  if (saveRequests(nextRequests)) {
+    alert(`Đã hủy kết bạn với ${user.name}.`);
+  }
+};
+
+// CHẶN NGƯỜI DÙNG
+const handleBlockUser = (user) => {
+  const currentBlocked = readStorage(BLOCKED_KEY);
+  const currentRequests = readStorage(REQUESTS_KEY);
+
+  if (
+    currentBlocked.some(
+      (item) => isSameUser(item, user)
+    )
+  ) {
+    alert("Người dùng này đã bị chặn!");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Bạn có chắc chắn muốn chặn ${user.name}?`
+  );
+
+  if (!confirmed) return;
+
+  const newBlockedUser = {
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    avatar: user.avatar,
+    bio: user.bio,
+    color: user.color,
+    blockedAt: new Date().toLocaleDateString("vi-VN"),
+  };
+
+  const nextBlockedUsers = [
+    ...currentBlocked,
+    newBlockedUser,
+  ];
+
+  const nextRequests = currentRequests.filter(
+    (item) => !isSameUser(item, user)
+  );
+
+  try {
+    // LƯU CẢ HAI DANH SÁCH TRƯỚC KHI PHÁT SỰ KIỆN
+    localStorage.setItem(
+      BLOCKED_KEY,
+      JSON.stringify(nextBlockedUsers)
     );
 
-    if (selectedUser?.username === user.username) {
-      setSelectedUser(null);
-    }
+    localStorage.setItem(
+      REQUESTS_KEY,
+      JSON.stringify(nextRequests)
+    );
+
+    setBlockedUsers(nextBlockedUsers);
+    setRequests(nextRequests);
+
+    window.dispatchEvent(
+      new Event("miniSocialBlockedUsersUpdated")
+    );
+
+    window.dispatchEvent(
+      new Event("miniSocialFriendRequestsUpdated")
+    );
+
+    setSelectedUser(null);
 
     alert(`Đã chặn ${user.name}.`);
-  };
+  } catch (error) {
+    console.error(error);
 
-  // BỎ CHẶN NGƯỜI DÙNG
-  const handleUnblockUser = (user) => {
-    const confirmed = window.confirm(
-      `Bạn có chắc chắn muốn bỏ chặn ${user.name}?`
+    setBlockedUsers(readStorage(BLOCKED_KEY));
+    setRequests(readStorage(REQUESTS_KEY));
+
+    alert(
+      "Không thể hoàn tất thao tác chặn. Vui lòng kiểm tra lại!"
     );
+  }
+};
 
-    if (!confirmed) return;
+// BỎ CHẶN NGƯỜI DÙNG
+const handleUnblockUser = (user) => {
+  const confirmed = window.confirm(
+    `Bạn có chắc chắn muốn bỏ chặn ${user.name}?`
+  );
 
-    setBlockedUsers((prev) =>
-      prev.filter(
-        (item) => item.username !== user.username
-      )
-    );
+  if (!confirmed) return;
 
+  const nextBlockedUsers = readStorage(
+    BLOCKED_KEY
+  ).filter(
+    (item) => !isSameUser(item, user)
+  );
+
+  if (saveBlockedUsers(nextBlockedUsers)) {
     alert(`Đã bỏ chặn ${user.name}.`);
-  };
-
+  }
+};
   return (
     <div className="search-users-page">
       <header className="search-users-header">
@@ -329,7 +520,7 @@ function SearchUsers() {
                     </div>
 
                     <div className="search-user-info">
-                      <strong>{user.name}</strong>
+                      <strong><Link to={`/profile?user=${encodeURIComponent(user.name)}`}>{user.name}</Link></strong>
                       <span>@{user.username}</span>
                       <p>{user.bio}</p>
                       <small>
@@ -368,11 +559,15 @@ function SearchUsers() {
                             </button>
                           )}
 
-                          {status === "sent" && (
-                            <span className="search-pending-button">
-                              Đã gửi lời mời
-                            </span>
-                          )}
+                         {status === "sent" && (
+  <button
+    type="button"
+    className="search-cancel-request-button"
+    onClick={() => handleCancelRequest(user)}
+  >
+    Hủy lời mời
+  </button>
+)}
 
                           {status === "received" && (
                             <Link
@@ -384,10 +579,20 @@ function SearchUsers() {
                           )}
 
                           {status === "accepted" && (
-                            <span className="search-friend-label">
-                              ✓ Bạn bè
-                            </span>
-                          )}
+  <>
+    <span className="search-friend-label">
+      ✓ Bạn bè
+    </span>
+
+    <button
+      type="button"
+      className="search-unfriend-button"
+      onClick={() => handleUnfriend(user)}
+    >
+      Hủy kết bạn
+    </button>
+  </>
+)}
 
                           <button
                             type="button"
