@@ -3,79 +3,178 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 const STORAGE_KEY = "miniSocialBlockedUsers";
+const BLOCKED_EVENT = "miniSocialBlockedUsersUpdated";
 
+// ĐỌC DANH SÁCH NGƯỜI DÙNG ĐÃ CHẶN
 function readBlockedUsers() {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
+    const data = JSON.parse(
+      localStorage.getItem(STORAGE_KEY) || "[]"
+    );
 
-    if (data === null) return [];
-
-    const parsed = JSON.parse(data);
-
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(data)
+      ? data.filter(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            !Array.isArray(item)
+        )
+      : [];
   } catch (error) {
-    console.error("Không thể đọc danh sách đã chặn:", error);
+    console.error(
+      "Không thể đọc danh sách đã chặn:",
+      error
+    );
+
     return [];
   }
 }
+// CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .trim();
+}
 
-function saveBlockedUsers(users) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-  } catch (error) {
-    console.error("Không thể lưu danh sách đã chặn:", error);
+// SO SÁNH NGƯỜI DÙNG
+function isSameUser(first, second) {
+  if (!first || !second) return false;
+
+  if (first.username && second.username) {
+    return first.username === second.username;
   }
+
+  if (first.name && second.name) {
+    return (
+      normalizeText(first.name) ===
+      normalizeText(second.name)
+    );
+  }
+
+  return (
+    first.id != null &&
+    second.id != null &&
+    first.id === second.id
+  );
+}
+
+// ĐỊNH DẠNG NGÀY CHẶN
+// ĐỊNH DẠNG NGÀY CHẶN
+function formatBlockedDate(value) {
+  if (!value) return "";
+
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value)) {
+    return value;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return date.toLocaleDateString("vi-VN");
 }
 
 function BlockedUsers() {
-  const [blockedUsers, setBlockedUsers] = useState(() =>
-    readBlockedUsers()
+  const [blockedUsers, setBlockedUsers] = useState(
+    readBlockedUsers
   );
 
   const [searchValue, setSearchValue] = useState("");
 
-  // LƯU DANH SÁCH NGƯỜI DÙNG ĐÃ CHẶN
+  // ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
   useEffect(() => {
-    saveBlockedUsers(blockedUsers);
-  }, [blockedUsers]);
-
-  // ĐỒNG BỘ KHI LOCAL STORAGE THAY ĐỔI Ở TAB KHÁC
-  useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (
-        event.key === STORAGE_KEY ||
-        event.key === null
-      ) {
-        setBlockedUsers(readBlockedUsers());
-      }
+    const refreshData = () => {
+      setBlockedUsers(readBlockedUsers());
     };
 
-    window.addEventListener("storage", handleStorageChange);
+    refreshData();
+
+    window.addEventListener(
+      BLOCKED_EVENT,
+      refreshData
+    );
+
+    window.addEventListener(
+      "storage",
+      refreshData
+    );
+
+    window.addEventListener(
+      "focus",
+      refreshData
+    );
 
     return () => {
-      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(
+        BLOCKED_EVENT,
+        refreshData
+      );
+
+      window.removeEventListener(
+        "storage",
+        refreshData
+      );
+
+      window.removeEventListener(
+        "focus",
+        refreshData
+      );
     };
   }, []);
 
+  // LƯU DANH SÁCH ĐÃ CHẶN
+  const saveBlockedUsers = (nextUsers) => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(nextUsers)
+      );
+
+      setBlockedUsers(nextUsers);
+
+      window.dispatchEvent(
+        new Event(BLOCKED_EVENT)
+      );
+
+      return true;
+    } catch (error) {
+      console.error(
+        "Không thể lưu danh sách đã chặn:",
+        error
+      );
+
+      alert(
+        "Không thể lưu dữ liệu. Vui lòng thử lại!"
+      );
+
+      return false;
+    }
+  };
+
   // TÌM KIẾM NGƯỜI DÙNG
   const filteredUsers = useMemo(() => {
-    const keyword = searchValue.trim().toLowerCase();
+    const keyword = normalizeText(searchValue);
 
     return blockedUsers.filter((user) => {
-      const name = (user.name || "").toLowerCase();
-      const username = (user.username || "").toLowerCase();
-
-      return (
-        name.includes(keyword) ||
-        username.includes(keyword)
+      const searchableText = normalizeText(
+        `${user.name || ""} ${user.username || ""}`
       );
+
+      return searchableText.includes(keyword);
     });
   }, [blockedUsers, searchValue]);
 
   // BỎ CHẶN MỘT NGƯỜI
   const handleUnblock = (user) => {
     const displayName =
-      user.name || user.username || "người dùng";
+      user.name ||
+      user.username ||
+      "người dùng";
 
     const confirmed = window.confirm(
       `Bạn có chắc muốn bỏ chặn ${displayName}?`
@@ -83,43 +182,53 @@ function BlockedUsers() {
 
     if (!confirmed) return;
 
-    setBlockedUsers((prevUsers) =>
-      prevUsers.filter((item) => {
-        if (user.username) {
-          return item.username !== user.username;
-        }
+    const currentUsers = readBlockedUsers();
 
-        return item.id !== user.id;
-      })
+    const updatedUsers = currentUsers.filter(
+      (item) => !isSameUser(item, user)
     );
 
-    alert(`Đã bỏ chặn ${displayName}.`);
+    if (saveBlockedUsers(updatedUsers)) {
+      alert(`Đã bỏ chặn ${displayName}.`);
+    }
   };
 
   // BỎ CHẶN TẤT CẢ
   const handleUnblockAll = () => {
-    if (blockedUsers.length === 0) return;
+    const currentUsers = readBlockedUsers();
+
+    if (currentUsers.length === 0) return;
 
     const confirmed = window.confirm(
-      "Bạn có chắc muốn bỏ chặn tất cả người dùng?"
+      `Bạn có chắc muốn bỏ chặn tất cả ${currentUsers.length} người dùng?`
     );
 
     if (!confirmed) return;
 
-    setBlockedUsers([]);
+    if (saveBlockedUsers([])) {
+      setSearchValue("");
 
-    alert("Đã bỏ chặn tất cả người dùng.");
+      alert(
+        "Đã bỏ chặn tất cả người dùng."
+      );
+    }
   };
 
   return (
     <div className="blocked-users-page">
       {/* HEADER */}
       <header className="blocked-users-header">
-        <Link to="/feed" className="blocked-users-logo">
+        <Link
+          to="/feed"
+          className="blocked-users-logo"
+        >
           MiniSocial
         </Link>
 
-        <Link to="/feed" className="blocked-users-back">
+        <Link
+          to="/feed"
+          className="blocked-users-back"
+        >
           ← Quay lại bảng tin
         </Link>
       </header>
@@ -131,12 +240,14 @@ function BlockedUsers() {
             <h1>Người dùng đã chặn</h1>
 
             <p>
-              Quản lý những người bạn đã chặn trên MiniSocial.
+              Quản lý những người bạn đã chặn
+              trên MiniSocial.
             </p>
           </div>
 
           <div className="blocked-users-total">
             <strong>{blockedUsers.length}</strong>
+
             <span>người đã chặn</span>
           </div>
         </div>
@@ -145,10 +256,21 @@ function BlockedUsers() {
         <div className="blocked-users-info">
           <span>🔒</span>
 
-          <p>
-            Những người trong danh sách này sẽ không xuất hiện
-            trong gợi ý kết bạn. Bạn có thể bỏ chặn bất cứ lúc nào.
-          </p>
+          <div>
+            <strong>Quản lý quyền riêng tư</strong>
+
+            <p>
+              Những người trong danh sách này
+              sẽ không xuất hiện trong gợi ý
+              kết bạn.
+            </p>
+
+            <p>
+              Bạn có thể bỏ chặn bất cứ lúc nào.
+              Việc bỏ chặn không tự động khôi phục
+              quan hệ bạn bè đã xóa.
+            </p>
+          </div>
         </div>
 
         {/* TÌM KIẾM */}
@@ -159,12 +281,15 @@ function BlockedUsers() {
             type="text"
             placeholder="Tìm người dùng đã chặn..."
             value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
+            onChange={(event) =>
+              setSearchValue(event.target.value)
+            }
           />
 
           {searchValue && (
             <button
               type="button"
+              aria-label="Xóa từ khóa"
               onClick={() => setSearchValue("")}
             >
               ✕
@@ -174,7 +299,13 @@ function BlockedUsers() {
 
         {/* TIÊU ĐỀ DANH SÁCH */}
         <div className="blocked-users-list-heading">
-          <h2>Danh sách đã chặn</h2>
+          <div>
+            <h2>Danh sách đã chặn</h2>
+
+            <small className="blocked-result-count">
+              {filteredUsers.length} người dùng
+            </small>
+          </div>
 
           {blockedUsers.length > 0 && (
             <button
@@ -190,7 +321,9 @@ function BlockedUsers() {
         {/* DANH SÁCH NGƯỜI DÙNG */}
         {filteredUsers.length === 0 ? (
           <div className="blocked-users-empty">
-            <div className="blocked-empty-icon">🛡️</div>
+            <div className="blocked-empty-icon">
+              🛡️
+            </div>
 
             <h3>
               {blockedUsers.length === 0
@@ -204,16 +337,30 @@ function BlockedUsers() {
                 : "Hãy thử tìm kiếm bằng tên hoặc username khác."}
             </p>
 
-            <Link to="/search-users">
-              Tìm kiếm người dùng
-            </Link>
+            {searchValue.trim() ? (
+              <button
+                type="button"
+                className="blocked-clear-search"
+                onClick={() => setSearchValue("")}
+              >
+                Xóa tìm kiếm
+              </button>
+            ) : (
+              <Link to="/search-users">
+                Tìm kiếm người dùng
+              </Link>
+            )}
           </div>
         ) : (
           <div className="blocked-users-list">
             {filteredUsers.map((user, index) => (
               <div
                 className="blocked-user-card"
-                key={user.username || user.id || index}
+                key={
+                  user.username ||
+                  user.id ||
+                  index
+                }
               >
                 {/* AVATAR */}
                 <div className="blocked-user-avatar">
@@ -224,20 +371,37 @@ function BlockedUsers() {
 
                 {/* THÔNG TIN */}
                 <div className="blocked-user-info">
-                  <strong>{user.name || "Người dùng"}</strong>
+                  <strong>
+                    {user.name || "Người dùng"}
+                  </strong>
 
                   <span>
                     @{user.username || "unknown"}
                   </span>
 
-                  <small>Người dùng đã bị chặn</small>
+                  <small className="blocked-status-label">
+                    🚫 Người dùng đã bị chặn
+                  </small>
+
+                  {formatBlockedDate(
+                    user.blockedAt
+                  ) && (
+                    <small className="blocked-user-date">
+                      Ngày chặn:{" "}
+                      {formatBlockedDate(
+                        user.blockedAt
+                      )}
+                    </small>
+                  )}
                 </div>
 
                 {/* BỎ CHẶN */}
                 <button
                   type="button"
                   className="blocked-unblock-button"
-                  onClick={() => handleUnblock(user)}
+                  onClick={() =>
+                    handleUnblock(user)
+                  }
                 >
                   Bỏ chặn
                 </button>

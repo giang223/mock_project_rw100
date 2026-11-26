@@ -6,6 +6,10 @@ import { addNotification } from "../notification/notificationUtils";
 const STORAGE_KEY = "miniSocialFriendRequests";
 const BLOCKED_KEY = "miniSocialBlockedUsers";
 
+const REQUEST_EVENT = "miniSocialFriendRequestsUpdated";
+const BLOCKED_EVENT = "miniSocialBlockedUsersUpdated";
+
+// DỮ LIỆU LỜI MỜI MẪU
 const initialRequests = [
   {
     id: 1,
@@ -33,105 +37,206 @@ const initialRequests = [
   },
 ];
 
-// ĐỌC DỮ LIỆU LOCAL STORAGE
+// ĐỌC DỮ LIỆU LOCALSTORAGE
 function readStorage(key, fallback = []) {
   try {
     const data = localStorage.getItem(key);
 
-    if (data === null) {
-      return fallback;
-    }
+    if (data === null) return fallback;
 
     const parsed = JSON.parse(data);
 
-    return Array.isArray(parsed) ? parsed : fallback;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            !Array.isArray(item)
+        )
+      : fallback;
   } catch (error) {
     console.error("Không thể đọc dữ liệu:", error);
     return fallback;
   }
 }
+// ĐỌC DANH SÁCH LỜI MỜI
+function readRequests() {
+  return readStorage(STORAGE_KEY, initialRequests);
+}
 
-// LƯU DỮ LIỆU LOCAL STORAGE
-function saveStorage(key, data) {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error("Không thể lưu dữ liệu:", error);
+// CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .trim();
+}
+
+// SO SÁNH NGƯỜI DÙNG
+function isSameUser(first, second) {
+  if (!first || !second) return false;
+
+  if (first.username && second.username) {
+    return (
+      normalizeText(first.username) ===
+      normalizeText(second.username)
+    );
   }
+
+  return (
+    Boolean(first.name && second.name) &&
+    normalizeText(first.name) ===
+      normalizeText(second.name)
+  );
+}
+
+// KIỂM TRA NGƯỜI DÙNG ĐÃ CHẶN
+function isBlockedUser(user, blockedUsers) {
+  return blockedUsers.some(
+    (item) => isSameUser(item, user)
+  );
 }
 
 function FriendRequests() {
-  const [requests, setRequests] = useState(() =>
-    readStorage(STORAGE_KEY, initialRequests)
+  const [requests, setRequests] = useState(
+    readRequests
   );
 
-  const [blockedUsers, setBlockedUsers] = useState(() =>
-    readStorage(BLOCKED_KEY)
+  const [blockedUsers, setBlockedUsers] = useState(
+    () => readStorage(BLOCKED_KEY)
   );
 
-  const [activeTab, setActiveTab] = useState("received");
-  const [searchValue, setSearchValue] = useState("");
+  const [activeTab, setActiveTab] =
+    useState("received");
 
-  // LƯU LỜI MỜI KẾT BẠN
+  const [searchValue, setSearchValue] =
+    useState("");
+
+  // ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
   useEffect(() => {
-    saveStorage(STORAGE_KEY, requests);
-  }, [requests]);
-
-  // LƯU DANH SÁCH NGƯỜI DÙNG ĐÃ CHẶN
-  useEffect(() => {
-    saveStorage(BLOCKED_KEY, blockedUsers);
-  }, [blockedUsers]);
-
-  // ĐỒNG BỘ KHI LOCAL STORAGE THAY ĐỔI Ở TAB KHÁC
-  useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (event.key === STORAGE_KEY || event.key === null) {
-        setRequests(readStorage(STORAGE_KEY));
-      }
-
-      if (event.key === BLOCKED_KEY || event.key === null) {
-        setBlockedUsers(readStorage(BLOCKED_KEY));
-      }
+    const refreshData = () => {
+      setRequests(readRequests());
+      setBlockedUsers(readStorage(BLOCKED_KEY));
     };
 
-    window.addEventListener("storage", handleStorageChange);
+    // CHỈ TẠO DỮ LIỆU MẪU KHI CHƯA CÓ DỮ LIỆU
+    try {
+      if (localStorage.getItem(STORAGE_KEY) === null) {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify(initialRequests)
+        );
+
+        window.dispatchEvent(
+          new Event(REQUEST_EVENT)
+        );
+      }
+    } catch (error) {
+      console.error("Không thể khởi tạo dữ liệu:", error);
+    }
+
+    refreshData();
+
+    window.addEventListener(
+      REQUEST_EVENT,
+      refreshData
+    );
+
+    window.addEventListener(
+      BLOCKED_EVENT,
+      refreshData
+    );
+
+    window.addEventListener(
+      "storage",
+      refreshData
+    );
+
+    window.addEventListener(
+      "focus",
+      refreshData
+    );
 
     return () => {
-      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(
+        REQUEST_EVENT,
+        refreshData
+      );
+
+      window.removeEventListener(
+        BLOCKED_EVENT,
+        refreshData
+      );
+
+      window.removeEventListener(
+        "storage",
+        refreshData
+      );
+
+      window.removeEventListener(
+        "focus",
+        refreshData
+      );
     };
   }, []);
 
-  // KIỂM TRA NGƯỜI DÙNG ĐÃ BỊ CHẶN
-  const isBlocked = (username) => {
-    return blockedUsers.some(
-      (user) => user.username === username
-    );
-  };
+  // LƯU VÀ ĐỒNG BỘ LỜI MỜI
+  const saveRequests = (nextRequests) => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(nextRequests)
+      );
 
-  // KIỂM TRA TRẠNG THÁI KẾT BẠN
-  const getFriendStatus = (username) => {
-    const request = requests.find(
-      (item) => item.username === username
-    );
+      setRequests(nextRequests);
 
-    return request?.status || "none";
+      window.dispatchEvent(
+        new Event(REQUEST_EVENT)
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Không thể lưu dữ liệu:", error);
+
+      alert(
+        "Không thể lưu dữ liệu. Vui lòng thử lại!"
+      );
+
+      return false;
+    }
   };
 
   // CHẤP NHẬN LỜI MỜI
   const handleAccept = (id) => {
-    const request = requests.find(
-      (item) => item.id === id && item.status === "received"
+    const currentRequests = readRequests();
+
+    const request = currentRequests.find(
+      (item) =>
+        item.id === id &&
+        item.status === "received"
     );
 
     if (!request) return;
 
-    if (isBlocked(request.username)) {
-      alert("Bạn đang chặn người dùng này. Hãy bỏ chặn trước.");
+    const currentBlocked = readStorage(BLOCKED_KEY);
+
+    if (isBlockedUser(request, currentBlocked)) {
+      alert(
+        "Bạn đang chặn người dùng này. Hãy bỏ chặn trước."
+      );
+
       return;
     }
 
-    setRequests((prev) =>
-      prev.map((item) =>
+    const updated = currentRequests
+      .filter(
+        (item) =>
+          item.id === id ||
+          !isSameUser(item, request)
+      )
+      .map((item) =>
         item.id === id
           ? {
               ...item,
@@ -139,22 +244,30 @@ function FriendRequests() {
               acceptedAt: new Date().toISOString(),
             }
           : item
-      )
-    );
+      );
 
-    addNotification({
-      type: "friend",
-      name: "MiniSocial",
-      message: `Bạn và ${request.name} hiện đã trở thành bạn bè.`,
-    });
+    if (saveRequests(updated)) {
+      addNotification({
+        type: "friend",
+        name: "MiniSocial",
+        message:
+          `Bạn và ${request.name} hiện đã trở thành bạn bè.`,
+      });
 
-    alert(`Bạn và ${request.name} đã trở thành bạn bè!`);
+      alert(
+        `Bạn và ${request.name} đã trở thành bạn bè!`
+      );
+    }
   };
 
   // TỪ CHỐI LỜI MỜI
   const handleReject = (id) => {
-    const request = requests.find(
-      (item) => item.id === id && item.status === "received"
+    const currentRequests = readRequests();
+
+    const request = currentRequests.find(
+      (item) =>
+        item.id === id &&
+        item.status === "received"
     );
 
     if (!request) return;
@@ -165,17 +278,29 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    setRequests((prev) =>
-      prev.filter((item) => item.id !== id)
+    const updated = currentRequests.filter(
+      (item) =>
+        !(
+          isSameUser(item, request) &&
+          item.status === "received"
+        )
     );
 
-    alert(`Đã từ chối lời mời của ${request.name}.`);
+    if (saveRequests(updated)) {
+      alert(
+        `Đã từ chối lời mời của ${request.name}.`
+      );
+    }
   };
 
   // HỦY LỜI MỜI ĐÃ GỬI
   const handleCancel = (id) => {
-    const request = requests.find(
-      (item) => item.id === id && item.status === "sent"
+    const currentRequests = readRequests();
+
+    const request = currentRequests.find(
+      (item) =>
+        item.id === id &&
+        item.status === "sent"
     );
 
     if (!request) return;
@@ -186,17 +311,29 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    setRequests((prev) =>
-      prev.filter((item) => item.id !== id)
+    const updated = currentRequests.filter(
+      (item) =>
+        !(
+          isSameUser(item, request) &&
+          item.status === "sent"
+        )
     );
 
-    alert(`Đã hủy lời mời gửi đến ${request.name}.`);
+    if (saveRequests(updated)) {
+      alert(
+        `Đã hủy lời mời gửi đến ${request.name}.`
+      );
+    }
   };
 
   // HỦY KẾT BẠN
   const handleUnfriend = (id) => {
-    const request = requests.find(
-      (item) => item.id === id && item.status === "accepted"
+    const currentRequests = readRequests();
+
+    const request = currentRequests.find(
+      (item) =>
+        item.id === id &&
+        item.status === "accepted"
     );
 
     if (!request) return;
@@ -207,30 +344,45 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    setRequests((prev) =>
-      prev.filter((item) => item.id !== id)
+    const updated = currentRequests.filter(
+      (item) => !isSameUser(item, request)
     );
 
-    alert(`Đã hủy kết bạn với ${request.name}.`);
+    if (saveRequests(updated)) {
+      alert(
+        `Đã hủy kết bạn với ${request.name}.`
+      );
+    }
   };
 
-  // LỌC LỜI MỜI ĐÃ NHẬN
-  const receivedRequests = useMemo(
-    () => requests.filter((item) => item.status === "received"),
-    [requests]
-  );
+  // LOẠI BỎ NGƯỜI DÙNG ĐÃ CHẶN
+  const visibleRequests = useMemo(() => {
+    return requests.filter(
+      (item) =>
+        !isBlockedUser(item, blockedUsers)
+    );
+  }, [requests, blockedUsers]);
 
-  // LỌC LỜI MỜI ĐÃ GỬI
-  const sentRequests = useMemo(
-    () => requests.filter((item) => item.status === "sent"),
-    [requests]
-  );
+  // LỜI MỜI ĐÃ NHẬN
+  const receivedRequests = useMemo(() => {
+    return visibleRequests.filter(
+      (item) => item.status === "received"
+    );
+  }, [visibleRequests]);
 
-  // LỌC DANH SÁCH BẠN BÈ
-  const acceptedRequests = useMemo(
-    () => requests.filter((item) => item.status === "accepted"),
-    [requests]
-  );
+  // LỜI MỜI ĐÃ GỬI
+  const sentRequests = useMemo(() => {
+    return visibleRequests.filter(
+      (item) => item.status === "sent"
+    );
+  }, [visibleRequests]);
+
+  // DANH SÁCH BẠN BÈ
+  const acceptedRequests = useMemo(() => {
+    return visibleRequests.filter(
+      (item) => item.status === "accepted"
+    );
+  }, [visibleRequests]);
 
   // LỌC THEO TAB VÀ TỪ KHÓA
   const displayedRequests = useMemo(() => {
@@ -244,14 +396,12 @@ function FriendRequests() {
       list = acceptedRequests;
     }
 
-    const keyword = searchValue.trim().toLowerCase();
+    const keyword = normalizeText(searchValue);
 
-    if (!keyword) return list;
-
-    return list.filter(
-      (item) =>
-        (item.name || "").toLowerCase().includes(keyword) ||
-        (item.username || "").toLowerCase().includes(keyword)
+    return list.filter((item) =>
+      normalizeText(
+        `${item.name || ""} ${item.username || ""}`
+      ).includes(keyword)
     );
   }, [
     activeTab,
@@ -261,15 +411,40 @@ function FriendRequests() {
     searchValue,
   ]);
 
+  // CHUYỂN TAB
+  const handleChangeTab = (tab) => {
+    setActiveTab(tab);
+    setSearchValue("");
+  };
+
+  // ĐỊNH DẠNG NGÀY
+  const formatDate = (value) => {
+    if (!value) return "";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    return date.toLocaleDateString("vi-VN");
+  };
+
   return (
     <div className="friend-requests-page">
       {/* HEADER */}
       <header className="friend-requests-header">
-        <Link to="/feed" className="friend-requests-logo">
+        <Link
+          to="/feed"
+          className="friend-requests-logo"
+        >
           MiniSocial
         </Link>
 
-        <Link to="/feed" className="friend-requests-back">
+        <Link
+          to="/feed"
+          className="friend-requests-back"
+        >
           ← Quay lại bảng tin
         </Link>
       </header>
@@ -280,7 +455,8 @@ function FriendRequests() {
           <h1>Bạn bè</h1>
 
           <p>
-            Quản lý lời mời kết bạn và danh sách bạn bè của bạn.
+            Quản lý lời mời kết bạn và danh sách
+            bạn bè của bạn.
           </p>
         </div>
 
@@ -288,33 +464,42 @@ function FriendRequests() {
         <div className="friend-requests-tabs">
           <button
             type="button"
-            className={activeTab === "received" ? "active" : ""}
-            onClick={() => {
-              setActiveTab("received");
-              setSearchValue("");
-            }}
+            className={
+              activeTab === "received"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              handleChangeTab("received")
+            }
           >
             Lời mời đã nhận ({receivedRequests.length})
           </button>
 
           <button
             type="button"
-            className={activeTab === "sent" ? "active" : ""}
-            onClick={() => {
-              setActiveTab("sent");
-              setSearchValue("");
-            }}
+            className={
+              activeTab === "sent"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              handleChangeTab("sent")
+            }
           >
             Lời mời đã gửi ({sentRequests.length})
           </button>
 
           <button
             type="button"
-            className={activeTab === "accepted" ? "active" : ""}
-            onClick={() => {
-              setActiveTab("accepted");
-              setSearchValue("");
-            }}
+            className={
+              activeTab === "accepted"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              handleChangeTab("accepted")
+            }
           >
             Bạn bè ({acceptedRequests.length})
           </button>
@@ -331,7 +516,9 @@ function FriendRequests() {
                   : "Danh sách bạn bè"}
             </h2>
 
-            <span>{displayedRequests.length} người dùng</span>
+            <span>
+              {displayedRequests.length} người dùng
+            </span>
           </div>
 
           {/* TÌM KIẾM */}
@@ -342,12 +529,15 @@ function FriendRequests() {
               type="text"
               placeholder="Tìm theo tên hoặc username..."
               value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
+              onChange={(e) =>
+                setSearchValue(e.target.value)
+              }
             />
 
             {searchValue && (
               <button
                 type="button"
+                aria-label="Xóa từ khóa"
                 onClick={() => setSearchValue("")}
               >
                 ✕
@@ -361,7 +551,7 @@ function FriendRequests() {
               <div>👥</div>
 
               <h3>
-                {searchValue
+                {searchValue.trim()
                   ? "Không tìm thấy người dùng"
                   : activeTab === "received"
                     ? "Bạn chưa có lời mời kết bạn nào"
@@ -371,7 +561,7 @@ function FriendRequests() {
               </h3>
 
               <p>
-                {searchValue
+                {searchValue.trim()
                   ? "Hãy thử tìm kiếm bằng tên hoặc username khác."
                   : "Hãy tìm kiếm người dùng để kết nối với mọi người."}
               </p>
@@ -382,79 +572,131 @@ function FriendRequests() {
             </div>
           ) : (
             <div className="friend-request-list">
-              {displayedRequests.map((request) => (
-                <div
-                  className="friend-request-card"
-                  key={request.id}
-                >
-                  {/* AVATAR */}
-                  <div className="friend-request-avatar">
-                    {request.avatar ||
-                      request.name?.charAt(0) ||
-                      "U"}
-                  </div>
+              {displayedRequests.map((request) => {
+                const profileUrl =
+                  `/profile?user=${encodeURIComponent(
+                    request.name || ""
+                  )}`;
 
-                  {/* THÔNG TIN */}
-                  <div className="friend-request-info">
-                    <strong>{request.name || "Người dùng"}</strong>
+                return (
+                  <div
+                    className="friend-request-card"
+                    key={request.id}
+                  >
+                    {/* AVATAR */}
+                    <Link
+                      className="friend-request-avatar"
+                      to={profileUrl}
+                      aria-label={`Xem hồ sơ ${request.name}`}
+                    >
+                      {request.avatar ||
+                        request.name?.charAt(0) ||
+                        "U"}
+                    </Link>
 
-                    <span>@{request.username || "unknown"}</span>
+                    {/* THÔNG TIN */}
+                    <div className="friend-request-info">
+                      <strong>
+                        <Link to={profileUrl}>
+                          {request.name || "Người dùng"}
+                        </Link>
+                      </strong>
 
-                    <small>
-                      👥 {request.mutualFriends || 0} bạn chung
-                    </small>
-                  </div>
+                      <span>
+                        @{request.username || "unknown"}
+                      </span>
 
-                  {/* NÚT THAO TÁC */}
-                  <div className="friend-request-actions">
-                    {activeTab === "received" && (
-                      <>
+                      <small>
+                        👥 {request.mutualFriends || 0} bạn chung
+                      </small>
+
+                      {activeTab === "sent" &&
+                        formatDate(request.createdAt) && (
+                          <small className="friend-request-date">
+                            Đã gửi:{" "}
+                            {formatDate(request.createdAt)}
+                          </small>
+                        )}
+
+                      {activeTab === "accepted" &&
+                        formatDate(request.acceptedAt) && (
+                          <small className="friend-request-date">
+                            Bạn bè từ:{" "}
+                            {formatDate(request.acceptedAt)}
+                          </small>
+                        )}
+                    </div>
+
+                    {/* NÚT THAO TÁC */}
+                    <div className="friend-request-actions">
+                      {/* LỜI MỜI ĐÃ NHẬN */}
+                      {activeTab === "received" && (
+                        <>
+                          <button
+                            type="button"
+                            className="friend-accept-button"
+                            onClick={() =>
+                              handleAccept(request.id)
+                            }
+                          >
+                            Chấp nhận
+                          </button>
+
+                          <button
+                            type="button"
+                            className="friend-reject-button"
+                            onClick={() =>
+                              handleReject(request.id)
+                            }
+                          >
+                            Từ chối
+                          </button>
+                        </>
+                      )}
+
+                      {/* LỜI MỜI ĐÃ GỬI */}
+                      {activeTab === "sent" && (
                         <button
                           type="button"
-                          className="friend-accept-button"
-                          onClick={() => handleAccept(request.id)}
+                          className="friend-cancel-button"
+                          onClick={() =>
+                            handleCancel(request.id)
+                          }
                         >
-                          Chấp nhận
+                          Hủy lời mời
                         </button>
+                      )}
 
-                        <button
-                          type="button"
-                          className="friend-reject-button"
-                          onClick={() => handleReject(request.id)}
-                        >
-                          Từ chối
-                        </button>
-                      </>
-                    )}
+                      {/* DANH SÁCH BẠN BÈ */}
+                      {activeTab === "accepted" && (
+                        <>
+                          <span className="friend-accepted-label">
+                            ✓ Đã là bạn bè
+                          </span>
 
-                    {activeTab === "sent" && (
-                      <button
-                        type="button"
-                        className="friend-cancel-button"
-                        onClick={() => handleCancel(request.id)}
+                          <button
+                            type="button"
+                            className="friend-reject-button"
+                            onClick={() =>
+                              handleUnfriend(request.id)
+                            }
+                          >
+                            Hủy kết bạn
+                          </button>
+                        </>
+                      )}
+
+                      {/* XEM TRANG CÁ NHÂN */}
+                      <Link
+                        className="friend-view-profile-button"
+                        to={profileUrl}
                       >
-                        Hủy lời mời
-                      </button>
-                    )}
-
-                    {activeTab === "accepted" && (
-                      <>
-                        <span className="friend-accepted-label">
-                          ✓ Đã là bạn bè
-                        </span>
-
-                        <button
-                          type="button"
-                          className="friend-reject-button"
-                          onClick={() => handleUnfriend(request.id)}
-                        >
-                          Hủy kết bạn
-                        </button>
-                      </>
-                    )}
+                        Xem hồ sơ
+                      </Link>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

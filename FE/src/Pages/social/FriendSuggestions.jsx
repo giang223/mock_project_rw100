@@ -6,6 +6,9 @@ import { addNotification } from "../notification/notificationUtils";
 const STORAGE_KEY = "miniSocialFriendRequests";
 const BLOCKED_KEY = "miniSocialBlockedUsers";
 
+const REQUEST_EVENT = "miniSocialFriendRequestsUpdated";
+const BLOCKED_EVENT = "miniSocialBlockedUsersUpdated";
+
 const suggestedUsers = [
   {
     id: 1,
@@ -72,106 +75,166 @@ const suggestedUsers = [
   },
 ];
 
-// ĐỌC DỮ LIỆU LOCAL STORAGE
+// ĐỌC DỮ LIỆU LOCALSTORAGE
 function readStorage(key) {
   try {
-    const data = localStorage.getItem(key);
+    const data = JSON.parse(
+      localStorage.getItem(key) || "[]"
+    );
 
-    if (!data) return [];
-
-    const parsed = JSON.parse(data);
-
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(data)
+      ? data.filter(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            !Array.isArray(item)
+        )
+      : [];
   } catch (error) {
     console.error("Không thể đọc dữ liệu:", error);
     return [];
   }
 }
 
+// CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
+function normalizeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/gi, "d")
+    .toLowerCase()
+    .trim();
+}
+
+// SO SÁNH NGƯỜI DÙNG
+function isSameUser(first, second) {
+  if (!first || !second) return false;
+
+  if (first.username && second.username) {
+    return first.username === second.username;
+  }
+
+  return (
+    Boolean(first.name && second.name) &&
+    normalizeText(first.name) ===
+      normalizeText(second.name)
+  );
+}
+
 function FriendSuggestions() {
-  const [requests, setRequests] = useState(() =>
-    readStorage(STORAGE_KEY)
+  const [requests, setRequests] = useState(
+    () => readStorage(STORAGE_KEY)
   );
 
-  const [blockedUsers, setBlockedUsers] = useState(() =>
-    readStorage(BLOCKED_KEY)
+  const [blockedUsers, setBlockedUsers] = useState(
+    () => readStorage(BLOCKED_KEY)
   );
 
   const [searchValue, setSearchValue] = useState("");
 
-  // LƯU LỜI MỜI KẾT BẠN
+  // ĐỒNG BỘ DỮ LIỆU
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(requests)
-    );
-  }, [requests]);
-
-  // LƯU DANH SÁCH ĐÃ CHẶN
-  useEffect(() => {
-    localStorage.setItem(
-      BLOCKED_KEY,
-      JSON.stringify(blockedUsers)
-    );
-  }, [blockedUsers]);
-
-  // ĐỒNG BỘ KHI LOCAL STORAGE THAY ĐỔI Ở TAB KHÁC
-  useEffect(() => {
-    const handleStorageChange = (event) => {
-      if (event.key === STORAGE_KEY) {
-        setRequests(readStorage(STORAGE_KEY));
-      }
-
-      if (event.key === BLOCKED_KEY) {
-        setBlockedUsers(readStorage(BLOCKED_KEY));
-      }
+    const refreshData = () => {
+      setRequests(readStorage(STORAGE_KEY));
+      setBlockedUsers(readStorage(BLOCKED_KEY));
     };
 
-    window.addEventListener("storage", handleStorageChange);
+    refreshData();
+
+    window.addEventListener(
+      REQUEST_EVENT,
+      refreshData
+    );
+
+    window.addEventListener(
+      BLOCKED_EVENT,
+      refreshData
+    );
+
+    window.addEventListener("storage", refreshData);
+    window.addEventListener("focus", refreshData);
 
     return () => {
-      window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener(
+        REQUEST_EVENT,
+        refreshData
+      );
+
+      window.removeEventListener(
+        BLOCKED_EVENT,
+        refreshData
+      );
+
+      window.removeEventListener(
+        "storage",
+        refreshData
+      );
+
+      window.removeEventListener(
+        "focus",
+        refreshData
+      );
     };
   }, []);
 
+  // LƯU LỜI MỜI KẾT BẠN
+  const saveRequests = (nextRequests) => {
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(nextRequests)
+      );
+
+      setRequests(nextRequests);
+
+      window.dispatchEvent(
+        new Event(REQUEST_EVENT)
+      );
+
+      return true;
+    } catch (error) {
+      console.error("Không thể lưu lời mời:", error);
+
+      alert("Không thể lưu dữ liệu. Vui lòng thử lại!");
+
+      return false;
+    }
+  };
+
   // KIỂM TRA TRẠNG THÁI KẾT BẠN
-  const getFriendStatus = (username) => {
+  const getFriendStatus = (user) => {
     const request = requests.find(
-      (item) => item.username === username
+      (item) => isSameUser(item, user)
     );
 
     return request?.status || "none";
   };
 
-  // KIỂM TRA ĐÃ CHẶN
-  const isBlocked = (username) => {
-    return blockedUsers.some(
-      (user) => user.username === username
-    );
-  };
-
   // LỌC VÀ SẮP XẾP GỢI Ý
   const filteredSuggestions = useMemo(() => {
-    const keyword = searchValue.trim().toLowerCase();
+    const keyword = normalizeText(searchValue);
 
     return suggestedUsers
       .filter((user) => {
-        const status = requests.find(
-          (request) => request.username === user.username
-        )?.status;
-
-        const blocked = blockedUsers.some(
-          (item) => item.username === user.username
+        const request = requests.find(
+          (item) => isSameUser(item, user)
         );
 
-        const matchesKeyword =
-          user.name.toLowerCase().includes(keyword) ||
-          user.username.toLowerCase().includes(keyword);
+        const status = request?.status || "none";
+
+        const blocked = blockedUsers.some(
+          (item) => isSameUser(item, user)
+        );
+
+        const matchesKeyword = normalizeText(
+          `${user.name} ${user.username} ${user.bio}`
+        ).includes(keyword);
 
         return (
           !blocked &&
-          status !== "accepted" &&
-          status !== "received" &&
+          !["accepted", "received", "pending"].includes(
+            status
+          ) &&
           matchesKeyword
         );
       })
@@ -182,27 +245,28 @@ function FriendSuggestions() {
 
   // GỬI LỜI MỜI KẾT BẠN
   const handleSendRequest = (user) => {
-    if (isBlocked(user.username)) {
+    const currentRequests = readStorage(STORAGE_KEY);
+    const currentBlocked = readStorage(BLOCKED_KEY);
+
+    const blocked = currentBlocked.some(
+      (item) => isSameUser(item, user)
+    );
+
+    if (blocked) {
       alert("Bạn cần bỏ chặn người dùng này trước.");
       return;
     }
 
-    const status = getFriendStatus(user.username);
+    const exists = currentRequests.some(
+      (item) =>
+        isSameUser(item, user) &&
+        ["sent", "received", "pending", "accepted"].includes(
+          item.status
+        )
+    );
 
-    if (status === "sent") {
-      alert("Bạn đã gửi lời mời cho người này rồi.");
-      return;
-    }
-
-    if (status === "received") {
-      alert(
-        "Người này đã gửi lời mời cho bạn. Hãy kiểm tra mục Bạn bè."
-      );
-      return;
-    }
-
-    if (status === "accepted") {
-      alert("Hai người đã là bạn bè.");
+    if (exists) {
+      alert("Đã tồn tại lời mời hoặc quan hệ bạn bè.");
       return;
     }
 
@@ -211,23 +275,34 @@ function FriendSuggestions() {
       name: user.name,
       username: user.username,
       avatar: user.avatar,
+      bio: user.bio,
+      color: user.color,
       mutualFriends: user.mutualFriends,
       status: "sent",
       createdAt: new Date().toISOString(),
     };
 
-    setRequests((prev) => [...prev, newRequest]);
+    const updated = [
+      ...currentRequests.filter(
+        (item) => !isSameUser(item, user)
+      ),
+      newRequest,
+    ];
 
-    addNotification({
-      type: "friend",
-      name: "Nguyễn Văn A",
-      message: `đã gửi lời mời kết bạn cho ${user.name}.`,
-    });
-
-    alert(`Đã gửi lời mời kết bạn đến ${user.name}!`);
+    if (saveRequests(updated)) {
+      addNotification({
+  type: "friend",
+  name: "Nguyễn Văn A",
+  isMine: true,
+  message: `đã gửi lời mời kết bạn cho ${user.name}.`,
+});
+      alert(
+        `Đã gửi lời mời kết bạn đến ${user.name}!`
+      );
+    }
   };
 
-  // HỦY LỜI MỜI ĐÃ GỬI
+  // HỦY LỜI MỜI KẾT BẠN
   const handleCancelRequest = (user) => {
     const confirmed = window.confirm(
       `Bạn có chắc muốn hủy lời mời kết bạn với ${user.name}?`
@@ -235,28 +310,34 @@ function FriendSuggestions() {
 
     if (!confirmed) return;
 
-    setRequests((prev) =>
-      prev.filter(
-        (item) =>
-          !(
-            item.username === user.username &&
-            item.status === "sent"
-          )
-      )
+    const updated = readStorage(STORAGE_KEY).filter(
+      (item) =>
+        !(
+          isSameUser(item, user) &&
+          item.status === "sent"
+        )
     );
 
-    alert("Đã hủy lời mời kết bạn.");
+    if (saveRequests(updated)) {
+      alert("Đã hủy lời mời kết bạn.");
+    }
   };
 
   return (
     <div className="friend-suggestions-page">
       {/* HEADER */}
       <header className="friend-suggestions-header">
-        <Link to="/feed" className="friend-suggestions-logo">
+        <Link
+          to="/feed"
+          className="friend-suggestions-logo"
+        >
           MiniSocial
         </Link>
 
-        <Link to="/feed" className="friend-suggestions-back">
+        <Link
+          to="/feed"
+          className="friend-suggestions-back"
+        >
           ← Quay lại bảng tin
         </Link>
       </header>
@@ -279,12 +360,15 @@ function FriendSuggestions() {
             type="text"
             placeholder="Tìm kiếm người dùng..."
             value={searchValue}
-            onChange={(e) => setSearchValue(e.target.value)}
+            onChange={(e) =>
+              setSearchValue(e.target.value)
+            }
           />
 
           {searchValue && (
             <button
               type="button"
+              aria-label="Xóa từ khóa"
               onClick={() => setSearchValue("")}
             >
               ✕
@@ -309,7 +393,8 @@ function FriendSuggestions() {
               <h3>Không còn gợi ý phù hợp</h3>
 
               <p>
-                Hãy thử tìm kiếm với tên khác hoặc quay lại sau nhé.
+                Hãy thử tìm kiếm với tên khác hoặc
+                quay lại sau nhé.
               </p>
 
               <Link to="/search-users">
@@ -319,7 +404,10 @@ function FriendSuggestions() {
           ) : (
             <div className="friend-suggestions-list">
               {filteredSuggestions.map((user, index) => {
-                const status = getFriendStatus(user.username);
+                const status = getFriendStatus(user);
+
+                const profileUrl =
+                  `/profile?user=${encodeURIComponent(user.name)}`;
 
                 return (
                   <div
@@ -332,15 +420,21 @@ function FriendSuggestions() {
                     </div>
 
                     {/* AVATAR */}
-                    <div
+                    <Link
+                      to={profileUrl}
                       className={`suggestion-avatar ${user.color}`}
+                      aria-label={`Xem hồ sơ ${user.name}`}
                     >
                       {user.avatar}
-                    </div>
+                    </Link>
 
                     {/* THÔNG TIN */}
                     <div className="suggestion-user-info">
-                      <strong>{user.name}</strong>
+                      <strong>
+                        <Link to={profileUrl}>
+                          {user.name}
+                        </Link>
+                      </strong>
 
                       <span>@{user.username}</span>
 
@@ -351,25 +445,36 @@ function FriendSuggestions() {
                       </small>
                     </div>
 
-                    {/* NÚT KẾT BẠN */}
+                    {/* THAO TÁC */}
                     <div className="suggestion-actions">
                       {status === "sent" ? (
                         <button
                           type="button"
                           className="suggestion-pending-button"
-                          onClick={() => handleCancelRequest(user)}
+                          onClick={() =>
+                            handleCancelRequest(user)
+                          }
                         >
-                          ✓ Đã gửi lời mời
+                          Hủy lời mời
                         </button>
                       ) : (
                         <button
                           type="button"
                           className="suggestion-add-button"
-                          onClick={() => handleSendRequest(user)}
+                          onClick={() =>
+                            handleSendRequest(user)
+                          }
                         >
                           + Kết bạn
                         </button>
                       )}
+
+                      <Link
+                        className="suggestion-profile-button"
+                        to={profileUrl}
+                      >
+                        Xem hồ sơ
+                      </Link>
                     </div>
                   </div>
                 );
@@ -382,7 +487,8 @@ function FriendSuggestions() {
         <div className="friend-suggestions-note">
           <span>💡</span>
 
-          Danh sách được sắp xếp theo số lượng bạn chung từ cao xuống thấp.
+          Danh sách được sắp xếp theo số lượng
+          bạn chung từ cao xuống thấp.
         </div>
 
         {/* LIÊN KẾT */}
