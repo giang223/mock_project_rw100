@@ -1689,6 +1689,10 @@ export function Messages() {
   const [images, setImages] = useState([]);
   const [newContact, setNewContact] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
+  // TẠO NHÓM TRÒ CHUYỆN
+const [showNewGroup, setShowNewGroup] = useState(false);
+const [groupName, setGroupName] = useState("");
+const [groupMembers, setGroupMembers] = useState([]);
   const [searchText, setSearchText] = useState("");
   const [isLoadingImages, setIsLoadingImages] = useState(false);
 
@@ -2011,6 +2015,45 @@ const finalName = existing.name;
     setSearchText("");
   };
 
+  // ĐÓNG POPUP TẠO NHÓM
+const closeGroupModal = () => {
+  setShowNewGroup(false);
+  setGroupName("");
+  setGroupMembers([]);
+};
+
+// CHỌN THÀNH VIÊN NHÓM
+const toggleGroupMember = (name) => {
+  setGroupMembers((current) =>
+    current.includes(name)
+      ? current.filter((item) => item !== name)
+      : [...current, name]
+  );
+};
+
+// TẠO NHÓM DEMO
+const handleCreateGroup = (event) => {
+  event.preventDefault();
+
+  const name = groupName.trim();
+
+  if (!name) {
+    alert("Vui lòng nhập tên nhóm!");
+    return;
+  }
+
+  if (groupMembers.length < 2) {
+    alert("Vui lòng chọn ít nhất 2 thành viên!");
+    return;
+  }
+
+  alert(
+    "Thông tin nhóm hợp lệ. Chức năng chat nhóm sẽ được phát triển sau."
+  );
+
+  closeGroupModal();
+};
+
   // CHỌN ẢNH
   const chooseImages = async (event) => {
     const files = Array.from(
@@ -2194,19 +2237,32 @@ const finalName = existing.name;
         {/* DANH SÁCH CUỘC TRÒ CHUYỆN */}
         <aside className="message-contacts">
 
-          <div className="message-contacts-heading">
-            <h2>Đoạn chat</h2>
+         <div className="message-contacts-heading">
+  <h2>Đoạn chat</h2>
 
-            <button
-              type="button"
-              className="message-new-chat"
-              onClick={() =>
-                setShowNewChat((value) => !value)
-              }
-            >
-              ＋ Tạo cuộc trò chuyện
-            </button>
-          </div>
+  <div className="message-create-actions">
+    <button
+      type="button"
+      className="message-new-chat"
+      onClick={() =>
+        setShowNewChat((value) => !value)
+      }
+    >
+      ＋ Tạo cuộc trò chuyện
+    </button>
+
+    <button
+      type="button"
+      className="message-new-group"
+      onClick={() => {
+        setShowNewChat(false);
+        setShowNewGroup(true);
+      }}
+    >
+      👥 Tạo nhóm
+    </button>
+  </div>
+</div>
 
           {/* TÌM KIẾM */}
           <div className="message-search">
@@ -2597,6 +2653,105 @@ const finalName = existing.name;
           )}
         </div>
       </section>
+      {/* POPUP TẠO NHÓM */}
+{showNewGroup && (
+  <div
+    className="community-modal"
+    onClick={closeGroupModal}
+  >
+    <form
+      className="message-group-modal"
+      onSubmit={handleCreateGroup}
+      onClick={(event) => event.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Tạo nhóm trò chuyện"
+    >
+      <div className="message-group-header">
+        <h2>Tạo nhóm trò chuyện</h2>
+
+        <button
+          type="button"
+          aria-label="Đóng"
+          onClick={closeGroupModal}
+        >
+          ✕
+        </button>
+      </div>
+
+      <label htmlFor="group-name">
+        Tên nhóm
+      </label>
+
+      <input
+        id="group-name"
+        autoFocus
+        maxLength={60}
+        placeholder="Nhập tên nhóm..."
+        value={groupName}
+        onChange={(event) =>
+          setGroupName(event.target.value)
+        }
+      />
+
+      <h4>Thêm thành viên</h4>
+
+      <p className="message-group-count">
+        Đã chọn {groupMembers.length} thành viên
+      </p>
+
+      <div className="message-group-members">
+        {contacts.map((person) => (
+          <label
+            key={person.id}
+            className="message-group-member"
+          >
+            <span className="person-avatar small">
+              {person.avatar}
+            </span>
+
+            <strong>{person.name}</strong>
+
+            <input
+              type="checkbox"
+              checked={groupMembers.includes(
+                person.name
+              )}
+              onChange={() =>
+                toggleGroupMember(person.name)
+              }
+            />
+          </label>
+        ))}
+      </div>
+
+      <div className="message-group-note">
+        Chức năng nhắn tin nhóm sẽ được cập nhật sau.
+      </div>
+
+      <div className="message-group-actions">
+        <button
+          type="button"
+          className="message-group-cancel"
+          onClick={closeGroupModal}
+        >
+          Hủy
+        </button>
+
+        <button
+          type="submit"
+          className="message-group-submit"
+          disabled={
+            !groupName.trim() ||
+            groupMembers.length < 2
+          }
+        >
+          Tạo nhóm
+        </button>
+      </div>
+    </form>
+  </div>
+)}
     </Shell>
   );
 }

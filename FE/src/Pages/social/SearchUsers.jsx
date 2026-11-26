@@ -288,10 +288,12 @@ const handleSendRequest = (user) => {
   if (!saveRequests(nextRequests)) return;
 
   addNotification({
-    type: "friend",
-    name: "Nguyễn Văn A",
-    isMine: true,
-    message: `đã gửi lời mời kết bạn cho ${user.name}.`,
+     type: "friend_request",
+  name: user.name,
+  username: user.username,
+  avatar: user.avatar || "",
+  isMine: false,
+  message: `Bạn đã gửi lời mời kết bạn cho ${user.name}.`,
   });
 
   alert(`Đã gửi lời mời kết bạn đến ${user.name}.`);
@@ -458,6 +460,28 @@ const handleUnblockUser = (user) => {
             Tìm kiếm và kết nối với những người dùng khác trên MiniSocial.
           </p>
         </div>
+
+{/* ĐIỀU HƯỚNG BẠN BÈ */}
+<nav
+  className="friends-top-navigation"
+  aria-label="Điều hướng bạn bè"
+>
+  <Link to="/friend-requests">
+    👥 Bạn bè
+  </Link>
+
+  <Link to="/friend-suggestions">
+    ✨ Gợi ý kết bạn
+  </Link>
+
+  <Link
+    to="/search-users"
+    className="active"
+    aria-current="page"
+  >
+    🔍 Tìm kiếm người dùng
+  </Link>
+</nav>
 
         <div className="search-users-box">
           <span>🔍</span>

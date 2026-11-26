@@ -291,10 +291,12 @@ function FriendSuggestions() {
 
     if (saveRequests(updated)) {
       addNotification({
-  type: "friend",
-  name: "Nguyễn Văn A",
-  isMine: true,
-  message: `đã gửi lời mời kết bạn cho ${user.name}.`,
+  type: "friend_request",
+  name: user.name,
+  username: user.username,
+  avatar: user.avatar || "",
+  isMine: false,
+  message: `Bạn đã gửi lời mời kết bạn cho ${user.name}.`,
 });
       alert(
         `Đã gửi lời mời kết bạn đến ${user.name}!`
@@ -351,6 +353,28 @@ function FriendSuggestions() {
             Khám phá những người bạn có thể quen biết.
           </p>
         </div>
+
+          {/* ĐIỀU HƯỚNG BẠN BÈ */}
+<nav
+  className="friends-top-navigation"
+  aria-label="Điều hướng bạn bè"
+>
+  <Link to="/friend-requests">
+    👥 Bạn bè
+  </Link>
+
+  <Link
+    to="/friend-suggestions"
+    className="active"
+    aria-current="page"
+  >
+    ✨ Gợi ý kết bạn
+  </Link>
+
+  <Link to="/search-users">
+    🔍 Tìm kiếm người dùng
+  </Link>
+</nav>
 
         {/* TÌM KIẾM */}
         <div className="friend-suggestions-search">
@@ -491,20 +515,6 @@ function FriendSuggestions() {
           bạn chung từ cao xuống thấp.
         </div>
 
-        {/* LIÊN KẾT */}
-        <div className="friend-suggestions-footer">
-          <Link to="/friend-requests">
-            Xem lời mời kết bạn
-          </Link>
-
-          <Link to="/search-users">
-            Tìm kiếm người dùng
-          </Link>
-
-          <Link to="/blocked-users">
-            Người dùng đã chặn
-          </Link>
-        </div>
       </main>
     </div>
   );
