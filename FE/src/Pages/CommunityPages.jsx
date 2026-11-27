@@ -1,24 +1,60 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { addNotification } from "./notification/notificationUtils";
+import {
+  MOCK_ACCOUNTS,
+  ACCOUNT_EVENT,
+  getCurrentAccount,
+  getAccountById,
+  getAccountByName,
+  readAccountData,
+  saveAccountData,
+  getMockUsers,
+  isUser,
+} from "../utils/mockAccounts";
+import {
+  FRIEND_EVENT,
+  BLOCKED_EVENT,
+  getFriendProfile,
+  getFriendStatus,
+  getFriendIds,
+  getRelationship,
+  isBlockedBetween,
+  sendFriendRequest,
+  cancelFriendRequest,
+} from "../utils/friendUtils";
 
 const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
-const DEFAULT_USER = "Nguyễn Văn A";
 
-function readProfile() {
+function readProfile(
+  account = getCurrentAccount() || MOCK_ACCOUNTS[0]
+) {
   const defaultProfile = {
-    fullName: DEFAULT_USER,
-    avatar: "",
+    ...account,
+    avatar: account.avatar || "",
   };
 
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(PROFILE_KEY) || "{}"
+    const legacyProfile =
+      account.id === 1
+        ? JSON.parse(
+            localStorage.getItem(PROFILE_KEY) || "{}"
+          )
+        : {};
+
+    const saved = readAccountData(
+      PROFILE_KEY,
+      legacyProfile,
+      account.id
     );
 
     return {
       ...defaultProfile,
       ...saved,
+      id: account.id,
+      username: account.username,
+      email: account.email,
     };
   } catch {
     return defaultProfile;
@@ -36,14 +72,21 @@ function useCurrentProfile() {
 
     refreshProfile();
 
-    window.addEventListener(PROFILE_EVENT, refreshProfile);
-    window.addEventListener("storage", refreshProfile);
-    window.addEventListener("focus", refreshProfile);
+    const events = [
+      ACCOUNT_EVENT,
+      PROFILE_EVENT,
+      "storage",
+      "focus",
+    ];
+
+    events.forEach((event) => {
+      window.addEventListener(event, refreshProfile);
+    });
 
     return () => {
-      window.removeEventListener(PROFILE_EVENT, refreshProfile);
-      window.removeEventListener("storage", refreshProfile);
-      window.removeEventListener("focus", refreshProfile);
+      events.forEach((event) => {
+        window.removeEventListener(event, refreshProfile);
+      });
     };
   }, []);
 
@@ -72,20 +115,19 @@ function ProfileAvatar({ profile }) {
   );
 }
 
-const seedStories = [
-  { id: 1, name: "Minh Anh", color: "linear-gradient(145deg,#fb7185,#f59e0b)", seen: false },
-  { id: 2, name: "Hoàng Nam", color: "linear-gradient(145deg,#60a5fa,#8b5cf6)", seen: false },
-  { id: 3, name: "Thu Hà", color: "linear-gradient(145deg,#34d399,#0ea5e9)", seen: true },
-];
-const people = [
-  { id: 1, name: "Nguyễn Minh Anh", bio: "Yêu thích du lịch và nhiếp ảnh", avatar: "MA" },
-  { id: 2, name: "Trần Hoàng Nam", bio: "Chia sẻ những điều tích cực mỗi ngày", avatar: "HN" },
-  { id: 3, name: "Lê Thu Hà", bio: "Coffee • Books • Music", avatar: "TH" },
-];
-const storeKey = "miniSocialMessages";
-const conversationsKey = "miniSocialConversations";
+const storeKey = "miniSocialMessagesV2";
+const conversationsKey = "miniSocialConversationsV2";
 function readConversations() {
-  try { const value = JSON.parse(localStorage.getItem(conversationsKey) || "[]"); return Array.isArray(value) ? value : []; } catch { return []; }
+  try {
+    const value = readAccountData(
+      conversationsKey,
+      []
+    );
+
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
 }
 
 function Shell({ title, subtitle, children }) {
@@ -119,6 +161,123 @@ function Shell({ title, subtitle, children }) {
 
 export function Stories() {
   const profile = useCurrentProfile();
+  const currentAccount =
+  getCurrentAccount() || MOCK_ACCOUNTS[0];
+
+const currentUserId = currentAccount.id;
+
+// LẤY TÀI KHOẢN ĐĂNG TIN
+const getStoryAccount = (story) => {
+  if (!story) return null;
+
+  if (story.authorId != null) {
+    return getAccountById(story.authorId);
+  }
+
+  return getAccountByName(
+    story.author ||
+      (story.isMine || story.name === "Bạn"
+        ? "Nguyễn Văn A"
+        : story.name)
+  );
+};
+
+// KIỂM TRA QUYỀN SỞ HỮU TIN
+const isOwnStory = (story) => {
+  const account = getStoryAccount(story);
+
+  return (
+    isUser(getCurrentAccount()) &&
+    isUser(account) &&
+    String(account.id) === String(currentUserId)
+  );
+};
+
+// KIỂM TRA QUYỀN XEM TIN
+const canViewStory = (story) => {
+  if (!story || !isUser(getCurrentAccount())) {
+    return false;
+  }
+
+  // KIỂM TRA TIN HẾT HẠN
+  if (
+    story.expiresAt &&
+    !(Date.parse(story.expiresAt) > Date.now())
+  ) {
+    return false;
+  }
+
+  const author = getStoryAccount(story);
+
+  // CHỈ CHO PHÉP XEM TIN CỦA USER
+  if (!isUser(author)) {
+    return false;
+  }
+
+  // CHỦ TIN ĐƯỢC XEM TIN CỦA MÌNH
+  if (isOwnStory(story)) {
+    return true;
+  }
+
+  // KIỂM TRA CHẶN HAI CHIỀU
+  if (isBlockedBetween(currentUserId, author.id)) {
+    return false;
+  }
+
+  const privacy = story.privacy || "public";
+
+  if (privacy === "public") {
+    return true;
+  }
+
+  if (privacy === "friends") {
+    return getFriendIds(currentUserId)
+      .map(String)
+      .includes(String(author.id));
+  }
+
+  return false;
+};
+
+// HIỂN THỊ QUYỀN RIÊNG TƯ CỦA TIN
+const getStoryPrivacyLabel = (privacy) => {
+  switch (privacy) {
+    case "friends":
+      return "👥 Bạn bè";
+
+    case "private":
+      return "🔒 Chỉ mình tôi";
+
+    default:
+      return "🌍 Công khai";
+  }
+};
+
+// LẤY HỒ SƠ NGƯỜI ĐĂNG TIN
+const getStoryProfile = (story) => {
+  const account = getStoryAccount(story);
+
+  if (account) {
+    return readProfile(account);
+  }
+
+  return {
+    fullName:
+      story?.author ||
+      story?.name ||
+      "Người dùng",
+    avatar: "",
+  };
+};
+
+// KIỂM TRA TRẠNG THÁI ĐÃ XEM
+const isStorySeen = (story) => {
+  const viewedBy = Array.isArray(story.viewedBy)
+    ? story.viewedBy.map(String)
+    : [];
+
+  return viewedBy.includes(String(currentUserId));
+};
   const STORY_KEY = "miniSocialStories";
   const STORY_EVENT = "miniSocialStoriesUpdated";
   const STORY_DURATION = 24 * 60 * 60 * 1000;
@@ -145,18 +304,6 @@ export function Stories() {
   const [stories, setStories] = useState(readStories);
   const [active, setActive] = useState(null);
 
-  const [viewedSeedIds, setViewedSeedIds] = useState(() => {
-  try {
-    const data = JSON.parse(
-      localStorage.getItem("miniSocialViewedSeedStories") || "[]"
-    );
-
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-});
-
   // TẠO TIN
   const [isCreating, setIsCreating] = useState(false);
   const [text, setText] = useState("");
@@ -180,6 +327,15 @@ export function Stories() {
 
   // LƯU VÀ ĐỒNG BỘ TIN
   const saveStories = (next) => {
+    const account = getCurrentAccount();
+
+    if (
+      !isUser(account) ||
+      String(account.id) !== String(currentUserId)
+    ) {
+      return false;
+    }
+
     try {
       localStorage.setItem(
         STORY_KEY,
@@ -202,8 +358,8 @@ export function Stories() {
     }
   };
 
-  // TỰ ĐỘNG KIỂM TRA TIN HẾT HẠN
- useEffect(() => {
+  // TỰ ĐỘNG KIỂM TRA TIN VÀ QUYỀN XEM
+useEffect(() => {
   const refreshStories = () => {
     const current = readStories();
 
@@ -213,52 +369,53 @@ export function Stories() {
       if (!previous) return null;
 
       const updated = current.find(
-        (item) => item.id === previous.id
+        (item) =>
+          String(item.id) === String(previous.id)
       );
 
-      if (updated) return updated;
-
-      if (
-        seedStories.some(
-          (item) => item.id === previous.id
-        )
-      ) {
-        return previous;
+      if (!updated || !canViewStory(updated)) {
+        return null;
       }
 
-      return null;
+      return updated;
     });
   };
+
+  refreshStories();
 
   const timer = setInterval(
     refreshStories,
     1000
   );
 
-  window.addEventListener(
+  const events = [
     STORY_EVENT,
-    refreshStories
-  );
-
-  window.addEventListener(
+    PROFILE_EVENT,
+    ACCOUNT_EVENT,
+    FRIEND_EVENT,
+    BLOCKED_EVENT,
     "storage",
-    refreshStories
-  );
+    "focus",
+  ];
+
+  events.forEach((event) => {
+    window.addEventListener(
+      event,
+      refreshStories
+    );
+  });
 
   return () => {
     clearInterval(timer);
 
-    window.removeEventListener(
-      STORY_EVENT,
-      refreshStories
-    );
-
-    window.removeEventListener(
-      "storage",
-      refreshStories
-    );
+    events.forEach((event) => {
+      window.removeEventListener(
+        event,
+        refreshStories
+      );
+    });
   };
-}, []);
+}, [currentUserId]);
 
   // CHỌN ẢNH HOẶC VIDEO
   const handleMediaChange = (event) => {
@@ -320,6 +477,16 @@ export function Stories() {
   const handleCreateStory = (event) => {
     event.preventDefault();
 
+    const account = getCurrentAccount();
+
+    if (
+      !isUser(account) ||
+      String(account.id) !== String(currentUserId)
+    ) {
+      alert("Bạn không có quyền đăng tin!");
+      return;
+    }
+
     if (isLoading) return;
 
     if (!text.trim() && !media) {
@@ -328,21 +495,22 @@ export function Stories() {
     }
 
     const newStory = {
-      id: Date.now(),
-      name: "Bạn",
-      author: "Nguyễn Văn A",
-      isMine: true,
-      text: text.trim(),
-      media,
-      mediaType,
-      color,
-      privacy,
-      seen: false,
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(
-        Date.now() + STORY_DURATION
-      ).toISOString(),
-    };
+  id: Date.now(),
+  authorId: currentUserId,
+  author: currentAccount.fullName,
+  authorUsername: currentAccount.username,
+  name: profile.fullName,
+  text: text.trim(),
+  media,
+  mediaType,
+  color,
+  privacy,
+  viewedBy: [],
+  createdAt: new Date().toISOString(),
+  expiresAt: new Date(
+    Date.now() + STORY_DURATION
+  ).toISOString(),
+};
 
     const next = [newStory, ...readStories()];
 
@@ -356,81 +524,114 @@ export function Stories() {
 const handleViewStory = (story) => {
   const currentStories = readStories();
 
-  const exists = currentStories.some(
-    (item) => item.id === story.id
+  const currentStory = currentStories.find(
+    (item) =>
+      String(item.id) === String(story.id)
   );
 
-  if (exists) {
-    const updatedStories = currentStories.map(
-      (item) =>
-        item.id === story.id
-          ? { ...item, seen: true }
-          : item
-    );
-
-    if (saveStories(updatedStories)) {
-      setActive({ ...story, seen: true });
-    } else {
-      setActive(story);
-    }
-
+  if (!currentStory) {
+    alert("Tin này đã hết hạn hoặc đã bị xóa!");
     return;
   }
 
-  const nextViewed = [
-    ...new Set([...viewedSeedIds, story.id]),
-  ];
-
-  try {
-    localStorage.setItem(
-      "miniSocialViewedSeedStories",
-      JSON.stringify(nextViewed)
-    );
-
-    setViewedSeedIds(nextViewed);
-  } catch {
-    console.error("Không thể lưu trạng thái xem tin");
+  if (!canViewStory(currentStory)) {
+    alert("Bạn không có quyền xem tin này!");
+    return;
   }
 
-  setActive({ ...story, seen: true });
-};
-  // XÓA TIN
-  const handleDeleteStory = (story) => {
-    if (!story.isMine && story.name !== "Bạn") {
-      return;
-    }
+  // XEM TIN CỦA CHÍNH MÌNH
+  if (isOwnStory(currentStory)) {
+    setActive(currentStory);
+    return;
+  }
 
-    const confirmed = window.confirm(
-      "Bạn có chắc chắn muốn xóa tin này không?"
-    );
+  // DANH SÁCH NGƯỜI ĐÃ XEM
+  const viewedBy = Array.isArray(
+    currentStory.viewedBy
+  )
+    ? currentStory.viewedBy.map(String)
+    : [];
 
-    if (!confirmed) return;
+  // ĐÃ XEM TRƯỚC ĐÓ
+  if (viewedBy.includes(String(currentUserId))) {
+    setActive(currentStory);
+    return;
+  }
 
-    const next = readStories().filter(
-      (item) => item.id !== story.id
-    );
-
-    if (saveStories(next)) {
-      setActive(null);
-    }
+  const updatedStory = {
+    ...currentStory,
+    viewedBy: [
+      ...new Set([
+        ...viewedBy,
+        String(currentUserId),
+      ]),
+    ],
   };
 
-  const myStories = stories.filter(
-    (story) => story.isMine || story.name === "Bạn"
+  const updatedStories = currentStories.map(
+    (item) =>
+      String(item.id) === String(currentStory.id)
+        ? updatedStory
+        : item
   );
 
-  const friendStories = [
-    ...stories.filter(
-      (story) =>
-        !story.isMine &&
-        story.name !== "Bạn" &&
-        story.privacy !== "private"
-    ),
-    ...seedStories.map((story) => ({
-  ...story,
-  seen: story.seen || viewedSeedIds.includes(story.id),
-})),
-  ];
+  if (saveStories(updatedStories)) {
+    setActive(updatedStory);
+  }
+};
+
+  // XÓA TIN
+const handleDeleteStory = (story) => {
+  const currentStories = readStories();
+
+  const currentStory = currentStories.find(
+    (item) => item.id === story.id
+  );
+
+  if (!currentStory) {
+    setActive(null);
+    return;
+  }
+
+  if (!isOwnStory(currentStory)) {
+    alert("Bạn không có quyền xóa tin này!");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Bạn có chắc chắn muốn xóa tin này không?"
+  );
+
+  if (!confirmed) return;
+
+  const next = currentStories.filter(
+    (item) => item.id !== currentStory.id
+  );
+
+  if (saveStories(next)) {
+    setActive(null);
+  }
+};
+
+  // DANH SÁCH TIN CỦA TÀI KHOẢN HIỆN TẠI
+const myStories = stories.filter(
+  (story) =>
+    isOwnStory(story) &&
+    canViewStory(story)
+);
+
+// DANH SÁCH TIN CỦA NGƯỜI DÙNG KHÁC
+const friendStories = stories
+  .filter(
+    (story) =>
+      !isOwnStory(story) &&
+      canViewStory(story)
+  )
+  .map((story) => ({
+    ...story,
+    name: getStoryProfile(story).fullName,
+    seen: isStorySeen(story),
+  }));
 
   return (
     <Shell
@@ -517,7 +718,9 @@ const handleViewStory = (story) => {
               </span>
 
               <b>Tin của bạn</b>
-              <small>Hiển thị trong 24 giờ</small>
+              <small>
+  {getStoryPrivacyLabel(story.privacy)}
+</small>
             </button>
           ))}
         </div>
@@ -529,10 +732,15 @@ const handleViewStory = (story) => {
         style={{ marginTop: 20 }}
       >
         <div className="community-panel-title">
-          <h2>Tin của bạn bè</h2>
+          <h2>Tin của mọi người</h2>
         </div>
 
         <div className="story-grid">
+          {friendStories.length === 0 && (
+  <p className="story-empty-message">
+    Chưa có tin mới từ người dùng khác.
+  </p>
+)}
           {friendStories.map((story) => (
             <button
               type="button"
@@ -576,7 +784,9 @@ const handleViewStory = (story) => {
               <b>{story.name}</b>
 
               <small>
-                {story.seen ? "Đã xem" : "Tin mới"}
+               {story.seen ? "Đã xem" : "Tin mới"}
+{" · "}
+{getStoryPrivacyLabel(story.privacy)}
               </small>
             </button>
           ))}
@@ -733,7 +943,7 @@ const handleViewStory = (story) => {
       )}
 
       {/* POPUP XEM TIN */}
-      {active && (
+{active && canViewStory(active) && (
         <div
           className="community-modal"
           onClick={() => setActive(null)}
@@ -786,21 +996,23 @@ const handleViewStory = (story) => {
 
             <div className="story-view-user">
   <div className="feed-avatar">
-    {active.isMine || active.name === "Bạn" ? (
-      <ProfileAvatar profile={profile} />
-    ) : (
-      (active.author || active.name || "U").charAt(0)
-    )}
+    <ProfileAvatar
+      profile={getStoryProfile(active)}
+    />
   </div>
 
+  <div className="story-view-user-info">
   <b>
-    {active.isMine || active.name === "Bạn"
-      ? profile.fullName
-      : active.author || active.name}
+    {getStoryProfile(active).fullName}
   </b>
+
+  <small>
+    {getStoryPrivacyLabel(active.privacy)}
+  </small>
+</div>
 </div>
 
-            {(active.isMine || active.name === "Bạn") && (
+            {isOwnStory(active) && (
               <button
                 type="button"
                 className="story-delete-button"
@@ -863,31 +1075,35 @@ function formatPostTime(value) {
 
 export function Explore() {
   const profile = useCurrentProfile();
+
+  const currentAccount =
+    getCurrentAccount() || MOCK_ACCOUNTS[0];
+
+  const currentUserId = currentAccount.id;
+
   const POSTS_KEY = "miniSocialPosts";
-  const FRIEND_KEY = "miniSocialFriendRequests";
-  const BLOCKED_KEY = "miniSocialBlockedUsers";
-  const CURRENT_USER = "Nguyễn Văn A";
+  const POSTS_EVENT = "miniSocialPostsUpdated";
 
-  // ĐỌC DỮ LIỆU LOCALSTORAGE
+  // ĐỌC DỮ LIỆU BÀI VIẾT
   const readData = (key) => {
-  try {
-    const data = JSON.parse(
-      localStorage.getItem(key) || "[]"
-    );
+    try {
+      const data = JSON.parse(
+        localStorage.getItem(key) || "[]"
+      );
 
-    return Array.isArray(data)
-      ? data.filter(
-          (item) =>
-            item &&
-            typeof item === "object" &&
-            !Array.isArray(item)
-        )
-      : [];
-  } catch (error) {
-    console.error("Không thể đọc dữ liệu:", error);
-    return [];
-  }
-};
+      return Array.isArray(data)
+        ? data.filter(
+            (item) =>
+              item &&
+              typeof item === "object" &&
+              !Array.isArray(item)
+          )
+        : [];
+    } catch {
+      return [];
+    }
+  };
+
   // STATE
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
@@ -896,60 +1112,37 @@ export function Explore() {
     () => readData(POSTS_KEY)
   );
 
-  const [requests, setRequests] = useState(
-    () => readData(FRIEND_KEY)
-  );
-
-  const [blockedUsers, setBlockedUsers] = useState(
-  () => readData(BLOCKED_KEY)
-);
+  const [, setRefreshVersion] = useState(0);
 
   // ĐỒNG BỘ DỮ LIỆU
- useEffect(() => {
-  const refreshData = () => {
-    setPosts(readData(POSTS_KEY));
-    setRequests(readData(FRIEND_KEY));
-    setBlockedUsers(readData(BLOCKED_KEY));
-  };
+  useEffect(() => {
+    const refreshData = () => {
+      setPosts(readData(POSTS_KEY));
+      setRefreshVersion((previous) => previous + 1);
+    };
 
-  window.addEventListener(
-    "miniSocialPostsUpdated",
-    refreshData
-  );
+    refreshData();
 
-  window.addEventListener(
-    "miniSocialFriendRequestsUpdated",
-    refreshData
-  );
+    const events = [
+      POSTS_EVENT,
+      FRIEND_EVENT,
+      BLOCKED_EVENT,
+      PROFILE_EVENT,
+      ACCOUNT_EVENT,
+      "storage",
+      "focus",
+    ];
 
-  window.addEventListener(
-    "miniSocialBlockedUsersUpdated",
-    refreshData
-  );
+    events.forEach((event) => {
+      window.addEventListener(event, refreshData);
+    });
 
-  window.addEventListener("storage", refreshData);
-  window.addEventListener("focus", refreshData);
-
-  return () => {
-    window.removeEventListener(
-      "miniSocialPostsUpdated",
-      refreshData
-    );
-
-    window.removeEventListener(
-      "miniSocialFriendRequestsUpdated",
-      refreshData
-    );
-
-    window.removeEventListener(
-      "miniSocialBlockedUsersUpdated",
-      refreshData
-    );
-
-    window.removeEventListener("storage", refreshData);
-    window.removeEventListener("focus", refreshData);
-  };
-}, []);
+    return () => {
+      events.forEach((event) => {
+        window.removeEventListener(event, refreshData);
+      });
+    };
+  }, []);
 
   // CHUYỂN TIẾNG VIỆT CÓ DẤU THÀNH KHÔNG DẤU
   const normalizeText = (value) => {
@@ -962,35 +1155,70 @@ export function Explore() {
       .trim();
   };
 
-  // HIỂN THỊ TÊN NGƯỜI DÙNG
-const displayName = (name, isMine = false) => {
-  if (isMine || name === CURRENT_USER) {
-    return profile.fullName || CURRENT_USER;
+ // XÁC ĐỊNH TÀI KHOẢN NGƯỜI ĐĂNG
+const findAuthorAccount = (name, authorId) => {
+  if (authorId != null) {
+    return getAccountById(authorId);
   }
 
-  return name || "Người dùng";
+  return getAccountByName(name);
+};
+
+// LẤY HỒ SƠ NGƯỜI ĐĂNG
+const getAuthorProfile = (name, authorId) => {
+  const account = findAuthorAccount(
+    name,
+    authorId
+  );
+
+  if (account) {
+    if (
+      String(account.id) === String(currentUserId)
+    ) {
+      return profile;
+    }
+
+    return readProfile(account);
+  }
+
+  return {
+    fullName: name || "Người dùng",
+    avatar: "",
+  };
+};
+
+// HIỂN THỊ TÊN NGƯỜI DÙNG
+const displayName = (name, authorId) => {
+  return getAuthorProfile(
+    name,
+    authorId
+  ).fullName;
 };
 
 // HIỂN THỊ ẢNH ĐẠI DIỆN
-const renderAvatar = (name, isMine = false) => {
-  if (isMine || name === CURRENT_USER) {
-    return <ProfileAvatar profile={profile} />;
-  }
-
+const renderAvatar = (name, authorId) => {
   return (
-    displayName(name)
-      .trim()
-      .split(/\s+/)
-      .pop()
-      ?.charAt(0)
-      .toUpperCase() || "U"
+    <ProfileAvatar
+      profile={getAuthorProfile(name, authorId)}
+    />
   );
 };
 
 // ĐƯỜNG DẪN TRANG CÁ NHÂN
-const getProfileLink = (name, isMine = false) => {
-  if (isMine || name === CURRENT_USER) {
-    return "/profile";
+const getProfileLink = (name, authorId) => {
+  const account = findAuthorAccount(
+    name,
+    authorId
+  );
+
+  if (account) {
+    if (
+      String(account.id) === String(currentUserId)
+    ) {
+      return "/profile";
+    }
+
+    return `/profile?userId=${account.id}`;
   }
 
   return `/profile?user=${encodeURIComponent(
@@ -999,32 +1227,24 @@ const getProfileLink = (name, isMine = false) => {
 };
 
 // KIỂM TRA NGƯỜI DÙNG BỊ CHẶN
-const isBlockedAuthor = (name) => {
-  if (!name) return false;
+const isBlockedAuthor = (name, authorId) => {
+  const account = findAuthorAccount(
+    name,
+    authorId
+  );
 
-  const normalizedName = normalizeText(name);
-  const username = normalizedName.replace(/\s+/g, "");
+  if (!account) return false;
 
-  return blockedUsers.some(
-    (item) =>
-      (
-        item.name &&
-        normalizeText(item.name) === normalizedName
-      ) ||
-      (
-        item.username &&
-        normalizeText(item.username) === username
-      )
+  return isBlockedBetween(
+    currentUserId,
+    account.id
   );
 };
 
-  // LẤY USERNAME
-  const getUsername = (person) => {
-    return (
-      person.username ||
-      person.name.toLowerCase().replace(/\s+/g, "")
-    );
-  };
+// LẤY USERNAME
+const getUsername = (person) => {
+  return person.username || "";
+};
 
   // LẤY DANH SÁCH ẢNH
   const getImages = (post) => {
@@ -1039,250 +1259,218 @@ const isBlockedAuthor = (name) => {
   };
 
   // DANH SÁCH NGƯỜI DÙNG
-  const allPeople = useMemo(() => {
-    const users = [...people];
+const allPeople = getMockUsers()
+  .filter(
+    (account) =>
+      String(account.id) !== String(currentUserId)
+  )
+  .map((account) => {
+    const user = getFriendProfile(account.id);
 
-    posts.forEach((post) => {
-      const authors = [
-        post.author,
-        post.originalPost?.author,
-      ];
+    if (!user) return null;
 
-      authors.forEach((author) => {
-        if (!author || author === CURRENT_USER) {
-          return;
-        }
+    return {
+      ...user,
+      id: account.id,
+      name: user.fullName,
+      username: account.username,
+    };
+  })
+  .filter(Boolean);
 
-        const exists = users.some(
-          (person) =>
-            normalizeText(person.name) ===
-            normalizeText(author)
-        );
-
-        if (!exists) {
-          users.push({
-            id: `user-${author}`,
-            name: author,
-            username: author
-              .toLowerCase()
-              .replace(/\s+/g, ""),
-            avatar: author.charAt(0).toUpperCase(),
-            bio: "Thành viên MiniSocial",
-          });
-        }
-      });
-    });
-
-    return users.filter(
-      (person) => person.name !== CURRENT_USER
-    );
-  }, [posts]);
-
-  // TÌM KIẾM NGƯỜI DÙNG
-  const filteredPeople = useMemo(() => {
-  const keyword = normalizeText(query);
-
-  return allPeople.filter((person) => {
-    const blocked = blockedUsers.some(
-      (item) =>
-        (
-          item.username &&
-          normalizeText(item.username) ===
-            normalizeText(getUsername(person))
-        ) ||
-        (
-          item.name &&
-          normalizeText(item.name) ===
-            normalizeText(person.name)
-        )
-    );
-
-    const searchableText = normalizeText(
-      `${person.name} ${getUsername(person)} ${person.bio || ""}`
-    );
-
-    return !blocked && searchableText.includes(keyword);
-  });
-}, [query, allPeople, blockedUsers]);
-
-  // TÌM KIẾM BÀI VIẾT
-const filteredPosts = useMemo(() => {
-  const keyword = normalizeText(query);
-
-  const canViewPost = (post) => {
-    if (!post) return false;
-
-    const isOwnPost =
-      post.isMine || post.author === CURRENT_USER;
-
-    if (isOwnPost) return true;
-
-    if (isBlockedAuthor(post.author)) {
-      return false;
-    }
-
-    if (post.privacy === "private") {
-      return false;
-    }
-
-    if (post.privacy === "friends") {
-      return requests.some(
-        (item) =>
-          item.status === "accepted" &&
-          normalizeText(item.name) ===
-            normalizeText(post.author)
-      );
-    }
-
-    return true;
-  };
-
-  return posts.filter((post) => {
-    if (!canViewPost(post)) return false;
-
-    const original = post.originalPost || {};
-
+// TÌM KIẾM NGƯỜI DÙNG
+const filteredPeople = allPeople.filter(
+  (person) => {
     if (
-      post.originalPost &&
-      !canViewPost(post.originalPost)
+      isBlockedBetween(
+        currentUserId,
+        person.id
+      )
     ) {
       return false;
     }
 
+    const keyword = normalizeText(query);
+
+    const searchableText = normalizeText(
+      `${person.name} ${person.username} ${person.bio || ""}`
+    );
+
+    return searchableText.includes(keyword);
+  }
+);
+
+  // KIỂM TRA QUYỀN XEM BÀI VIẾT
+const canViewPost = (post) => {
+  if (!post || !isUser(getCurrentAccount())) {
+    return false;
+  }
+
+  const authorAccount = findAuthorAccount(
+    post.author,
+    post.authorId
+  );
+
+  // CHỈ HIỂN THỊ BÀI VIẾT CỦA USER
+  if (!isUser(authorAccount)) {
+    return false;
+  }
+
+  // CHỦ BÀI VIẾT
+  if (
+    String(authorAccount.id) ===
+    String(currentUserId)
+  ) {
+    return true;
+  }
+
+  // KIỂM TRA NGƯỜI BỊ CHẶN
+  if (
+    isBlockedAuthor(
+      post.author,
+      post.authorId
+    )
+  ) {
+    return false;
+  }
+
+  const privacy = post.privacy || "public";
+
+  if (privacy === "public") {
+    return true;
+  }
+
+  if (privacy === "friends") {
+    return getFriendIds(currentUserId)
+      .map(String)
+      .includes(String(authorAccount.id));
+  }
+
+  return false;
+};
+
+// TÌM KIẾM BÀI VIẾT
+const filteredPosts = posts
+  .filter((post) => canViewPost(post))
+  .map((post) => {
+    // BÀI VIẾT THÔNG THƯỜNG
+    if (!post.isShared) {
+      return post;
+    }
+
+    // LẤY BÀI VIẾT GỐC MỚI NHẤT
+    const original = posts.find(
+      (item) =>
+        item &&
+        String(item.id) ===
+          String(post.originalPost?.id)
+    );
+
+    // BÀI VIẾT GỐC KHÔNG KHẢ DỤNG
+    if (
+      !original ||
+      original.isShared ||
+      !canViewPost(original)
+    ) {
+      return null;
+    }
+
+    // CẬP NHẬT NỘI DUNG BÀI VIẾT GỐC
+    return {
+      ...post,
+      originalPost: original,
+    };
+  })
+  .filter(Boolean)
+  .filter((post) => {
+    const original = post.originalPost || {};
+
+    const keyword = normalizeText(query);
+
     const searchableText = normalizeText(
       [
-        displayName(post.author, post.isMine),
+        displayName(
+          post.author,
+          post.authorId
+        ),
         post.content,
         post.feeling,
         post.location,
+
         original.author
-          ? displayName(original.author, original.isMine)
+          ? displayName(
+              original.author,
+              original.authorId
+            )
           : "",
+
         original.content,
+        original.feeling,
+        original.location,
       ].join(" ")
     );
 
     return searchableText.includes(keyword);
   });
-}, [query, posts, blockedUsers, profile, requests]);
 
   // KIỂM TRA TRẠNG THÁI KẾT BẠN
-  const getFriendStatus = (person) => {
-    const username = getUsername(person);
+const getPersonFriendStatus = (person) => {
+  return getFriendStatus(person.id);
+};
 
-    const request = requests.find(
-      (item) =>
-        item.username === username ||
-        item.name === person.name
+// GỬI LỜI MỜI KẾT BẠN
+const handleAddFriend = (person) => {
+  if (
+    !isUser(getCurrentAccount()) ||
+    !isUser(getAccountById(person.id))
+  ) {
+    alert("Không thể kết bạn với tài khoản này!");
+    return;
+  }
+
+  const success = sendFriendRequest(person.id);
+
+  if (success) {
+    alert(
+      `Đã gửi lời mời kết bạn cho ${person.name}!`
     );
+  } else {
+    alert("Không thể gửi lời mời kết bạn!");
+  }
+};
 
-    return request?.status || "";
-  };
+// HỦY LỜI MỜI KẾT BẠN
+const handleCancelRequest = (person) => {
+  if (
+    !isUser(getCurrentAccount()) ||
+    !isUser(getAccountById(person.id))
+  ) {
+    return;
+  }
 
-  // GỬI LỜI MỜI KẾT BẠN
-  const handleAddFriend = (person) => {
-    const current = readData(FRIEND_KEY);
-    const username = getUsername(person);
+  const relationship = getRelationship(
+    currentUserId,
+    person.id
+  );
 
-    const blocked = readData(BLOCKED_KEY).some(
-  (item) =>
-    (
-      item.username &&
-      normalizeText(item.username) ===
-        normalizeText(username)
-    ) ||
-    (
-      item.name &&
-      normalizeText(item.name) ===
-        normalizeText(person.name)
-    )
-);
+  if (!relationship) return;
 
-if (blocked) {
-  alert("Bạn cần bỏ chặn người dùng này trước.");
-  return;
-}
+  const confirmed = window.confirm(
+    `Bạn có muốn hủy lời mời kết bạn với ${person.name} không?`
+  );
 
-    const exists = current.some(
-      (item) =>
-        (
-          item.username === username ||
-          item.name === person.name
-        ) &&
-        ["sent", "received", "pending", "accepted"].includes(
-          item.status
-        )
-    );
+  if (!confirmed) return;
 
-    if (exists) {
-      alert("Bạn đã có lời mời hoặc đã kết bạn!");
-      return;
-    }
+  const success = cancelFriendRequest(
+    relationship.id
+  );
 
-    const newRequest = {
-      id: Date.now(),
-      name: person.name,
-      username,
-      avatar: person.avatar,
-      bio: person.bio || "",
-      status: "sent",
-      createdAt: new Date().toISOString(),
-    };
-
-    const updated = [newRequest, ...current];
-
-    try {
-      localStorage.setItem(
-        FRIEND_KEY,
-        JSON.stringify(updated)
-      );
-
-      setRequests(updated);
-
-      window.dispatchEvent(
-        new Event("miniSocialFriendRequestsUpdated")
-      );
-    } catch {
-      alert("Không thể gửi lời mời kết bạn!");
-    }
-  };
-
-  // HỦY LỜI MỜI KẾT BẠN
-  const handleCancelRequest = (person) => {
-    const confirmed = window.confirm(
-      "Bạn có muốn hủy lời mời kết bạn không?"
-    );
-
-    if (!confirmed) return;
-
-    const username = getUsername(person);
-
-    const updated = readData(FRIEND_KEY).filter(
-      (item) =>
-        !(
-          (
-            item.username === username ||
-            item.name === person.name
-          ) &&
-          item.status === "sent"
-        )
-    );
-
-    try {
-      localStorage.setItem(
-        FRIEND_KEY,
-        JSON.stringify(updated)
-      );
-
-      setRequests(updated);
-
-      window.dispatchEvent(
-        new Event("miniSocialFriendRequestsUpdated")
-      );
-    } catch {
-      alert("Không thể hủy lời mời!");
-    }
-  };
+  if (success) {
+    alert("Đã hủy lời mời kết bạn!");
+  } else {
+    alert("Không thể hủy lời mời!");
+  }
+};
 
   const tabs = [
     {
@@ -1382,7 +1570,7 @@ if (blocked) {
           ) : (
             <div className="people-grid">
               {filteredPeople.map((person) => {
-                const status = getFriendStatus(person);
+                const status = getPersonFriendStatus(person);
 
                 return (
                   <article
@@ -1390,24 +1578,17 @@ if (blocked) {
                     key={person.id}
                   >
                     <Link
-                      to={`/profile?user=${encodeURIComponent(
-                        person.name
-                      )}`}
-                      className="person-avatar"
+                      to={`/profile?userId=${person.id}`}
+                      className={`person-avatar ${person.color || "blue"}`}
                     >
-                      {person.avatar ||
-                        person.name.charAt(0)}
+                      <ProfileAvatar profile={person} />
                     </Link>
 
                     <h3>
-                      <Link
-                        to={`/profile?user=${encodeURIComponent(
-                          person.name
-                        )}`}
-                      >
-                        {person.name}
-                      </Link>
-                    </h3>
+  <Link to={`/profile?userId=${person.id}`}>
+    {person.name}
+  </Link>
+</h3>
 
                     <small className="explore-username">
                       @{getUsername(person)}
@@ -1455,13 +1636,11 @@ if (blocked) {
                     )}
 
                     <Link
-                      className="explore-profile-link"
-                      to={`/profile?user=${encodeURIComponent(
-                        person.name
-                      )}`}
-                    >
-                      Xem trang cá nhân
-                    </Link>
+  className="explore-profile-link"
+  to={`/profile?userId=${person.id}`}
+>
+  Xem trang cá nhân
+</Link>
                   </article>
                 );
               })}
@@ -1515,17 +1694,17 @@ if (blocked) {
                     <div className="explore-post-header">
   <Link
     className="feed-avatar"
-    to={getProfileLink(post.author, post.isMine)}
+    to={getProfileLink(post.author, post.authorId)}
   >
-    {renderAvatar(post.author, post.isMine)}
+    {renderAvatar(post.author, post.authorId)}
   </Link>
 
   <div>
     <Link
       className="explore-post-author"
-      to={getProfileLink(post.author, post.isMine)}
+      to={getProfileLink(post.author, post.authorId)}
     >
-      {displayName(post.author, post.isMine)}
+      {displayName(post.author, post.authorId)}
     </Link>
 
     <small>
@@ -1567,7 +1746,7 @@ if (blocked) {
       <div className="feed-avatar">
         {renderAvatar(
           original.author,
-          original.isMine
+          original.authorId
         )}
       </div>
 
@@ -1575,13 +1754,19 @@ if (blocked) {
         <strong>
           {displayName(
             original.author,
-            original.isMine
+            original.authorId
           )}
         </strong>
 
         <small>
-          {formatPostTime(original.createdAt)}
-        </small>
+  {formatPostTime(original.createdAt)}
+
+  {original.privacy === "private"
+    ? " · 🔒 Chỉ mình tôi"
+    : original.privacy === "friends"
+    ? " · 👥 Bạn bè"
+    : " · 🌍 Công khai"}
+</small>
       </div>
     </div>
 
@@ -1645,56 +1830,65 @@ if (blocked) {
 export function Messages() {
   const profile = useCurrentProfile();
 
-  const FRIEND_KEY = "miniSocialFriendRequests";
-  const BLOCKED_KEY = "miniSocialBlockedUsers";
+  const currentAccount =
+    getCurrentAccount() || MOCK_ACCOUNTS[0];
+
+  const currentUserId = String(currentAccount.id);
+
+  const [searchParams, setSearchParams] =
+    useSearchParams();
+
+  const requestedUser =
+    searchParams.get("user") || "";
+
+  const requestedUserId =
+    searchParams.get("userId") || "";
+
   const MESSAGE_EVENT = "miniSocialMessagesUpdated";
 
   const readData = (key) => {
-  try {
-    const data = JSON.parse(
-      localStorage.getItem(key) || "[]"
-    );
+    try {
+      const data = JSON.parse(
+        localStorage.getItem(key) || "[]"
+      );
 
-    return Array.isArray(data)
-      ? data.filter(
-          (item) =>
-            item &&
-            typeof item === "object" &&
-            !Array.isArray(item)
-        )
-      : [];
-  } catch (error) {
-    console.error("Không thể đọc dữ liệu:", error);
-    return [];
-  }
-};
+      return Array.isArray(data)
+        ? data.filter(
+            (item) =>
+              item &&
+              typeof item === "object" &&
+              !Array.isArray(item)
+          )
+        : [];
+    } catch {
+      return [];
+    }
+  };
 
   const [messages, setMessages] = useState(
     () => readData(storeKey)
   );
 
-  const [savedConversations, setSavedConversations] =
-    useState(readConversations);
+  const [, setSavedConversations] =
+  useState(readConversations);
 
-  const [friends, setFriends] = useState(
-    () => readData(FRIEND_KEY)
-  );
-
-  const [blockedUsers, setBlockedUsers] = useState(
-    () => readData(BLOCKED_KEY)
-  );
+  const [, setRefreshVersion] = useState(0);
 
   const [selected, setSelected] = useState("");
   const [draft, setDraft] = useState("");
   const [images, setImages] = useState([]);
+
   const [newContact, setNewContact] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
-  // TẠO NHÓM TRÒ CHUYỆN
-const [showNewGroup, setShowNewGroup] = useState(false);
-const [groupName, setGroupName] = useState("");
-const [groupMembers, setGroupMembers] = useState([]);
+
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [groupMembers, setGroupMembers] = useState([]);
+
   const [searchText, setSearchText] = useState("");
-  const [isLoadingImages, setIsLoadingImages] = useState(false);
+
+  const [isLoadingImages, setIsLoadingImages] =
+    useState(false);
 
   const messageListRef = useRef(null);
   const imageReadVersion = useRef(0);
@@ -1709,166 +1903,177 @@ const [groupMembers, setGroupMembers] = useState([]);
       .trim();
   };
 
-  // TẠO CHỮ CÁI ĐẠI DIỆN
-  const getAvatar = (name) => {
-    return String(name || "U")
-      .trim()
-      .split(/\s+/)
-      .map((part) => part.charAt(0))
-      .join("")
-      .slice(-2)
-      .toUpperCase();
-  };
-
   // KIỂM TRA NGƯỜI BỊ CHẶN
-  const isBlocked = (name, list = blockedUsers) => {
-    const normalizedName = normalizeText(name);
+const isBlocked = (userId) => {
+  return isBlockedBetween(
+    currentUserId,
+    userId
+  );
+};
 
-    if (!normalizedName) return false;
+// KIỂM TRA QUYỀN TRÒ CHUYỆN
+const canChatWith = (userId) => {
+  const account = getCurrentAccount();
+  const target = getAccountById(userId);
 
-    return list.some(
-      (person) =>
-        normalizeText(person.name) === normalizedName ||
-        (
-          person.username &&
-          normalizeText(person.username) ===
-            normalizedName.replace(/\s+/g, "")
-        )
-    );
-  };
+  return (
+    isUser(account) &&
+    isUser(target) &&
+    String(account.id) === currentUserId &&
+    String(target.id) !== currentUserId &&
+    !isBlocked(userId)
+  );
+};
+
+// KIỂM TRA TIN NHẮN CỦA MÌNH
+const isMyMessage = (message) => {
+  return (
+    String(message.senderId) === currentUserId
+  );
+};
+
+// KIỂM TRA TIN NHẮN THUỘC CUỘC TRÒ CHUYỆN
+const belongsToConversation = (message, userId) => {
+  const senderId = String(message.senderId);
+  const receiverId = String(message.receiverId);
+  const targetId = String(userId);
+
+  return (
+    (
+      senderId === currentUserId &&
+      receiverId === targetId
+    ) ||
+    (
+      receiverId === currentUserId &&
+      senderId === targetId
+    )
+  );
+};
+
+// KIỂM TRA TIN NHẮN ĐÃ XÓA Ở PHÍA MÌNH
+const isDeletedForMe = (message) => {
+  const deletedBy = Array.isArray(message.deletedBy)
+    ? message.deletedBy.map(String)
+    : [];
+
+  return deletedBy.includes(currentUserId);
+};
 
   // ĐỒNG BỘ DỮ LIỆU
-  useEffect(() => {
-    const refreshData = () => {
-      setMessages(readData(storeKey));
-      setSavedConversations(readConversations());
-      setFriends(readData(FRIEND_KEY));
-      setBlockedUsers(readData(BLOCKED_KEY));
-    };
+useEffect(() => {
+  const refreshData = () => {
+    setMessages(readData(storeKey));
+    setSavedConversations(readConversations());
+    setRefreshVersion((previous) => previous + 1);
+  };
 
-    refreshData();
+  refreshData();
 
-    const events = [
-      MESSAGE_EVENT,
-      "miniSocialFriendRequestsUpdated",
-      "miniSocialBlockedUsersUpdated",
-      "storage",
-      "focus",
-    ];
+  const events = [
+    MESSAGE_EVENT,
+    FRIEND_EVENT,
+    BLOCKED_EVENT,
+    PROFILE_EVENT,
+    ACCOUNT_EVENT,
+    "storage",
+    "focus",
+  ];
 
+  events.forEach((event) => {
+    window.addEventListener(event, refreshData);
+  });
+
+  return () => {
     events.forEach((event) => {
-      window.addEventListener(event, refreshData);
+      window.removeEventListener(event, refreshData);
     });
-
-    return () => {
-      events.forEach((event) => {
-        window.removeEventListener(event, refreshData);
-      });
-    };
-  }, []);
-
-  // LẤY DANH SÁCH BẠN BÈ
-  const acceptedFriends = friends.filter(
-    (person) => person.status === "accepted"
-  );
+  };
+}, []);
 
   // LẤY TIN NHẮN CUỐI CÙNG
-  const getLastMessage = (name) => {
-    return messages
-      .filter(
-        (message) =>
-          message.name === name &&
-          !message.deleted
-      )
-      .slice(-1)[0];
-  };
-
-  // NỘI DUNG TIN NHẮN CUỐI
-  const getLastMessageText = (name) => {
-    const last = getLastMessage(name);
-
-    if (!last) {
-      return "Bắt đầu trò chuyện";
-    }
-
-    if (last.recalled) {
-      return "Tin nhắn đã được thu hồi";
-    }
-
-    const prefix = last.mine ? "Bạn: " : "";
-
-    if (last.text) {
-      return prefix + last.text;
-    }
-
-    if (last.image || last.images?.length) {
-      return prefix + "Đã gửi hình ảnh";
-    }
-
-    return "Tin nhắn";
-  };
-
-  // DANH SÁCH CUỘC TRÒ CHUYỆN
-  const contacts = [
-    ...people,
-
-    ...acceptedFriends.map((person) => ({
-      id: `friend-${person.id}`,
-      name: person.name,
-      avatar: person.avatar || getAvatar(person.name),
-    })),
-
-    ...savedConversations.map((name) => ({
-      id: `chat-${name}`,
-      name,
-      avatar: getAvatar(name),
-    })),
-
-    ...messages.map((message) => ({
-      id: `chat-${message.name}`,
-      name: message.name,
-      avatar: getAvatar(message.name),
-    })),
-  ]
+const getLastMessage = (userId) => {
+  return messages
     .filter(
-      (person, index, all) =>
-        person.name &&
-        person.name !== DEFAULT_USER &&
-        !isBlocked(person.name) &&
-        all.findIndex(
-          (item) =>
-            normalizeText(item.name) ===
-            normalizeText(person.name)
-        ) === index
+      (message) =>
+        belongsToConversation(message, userId) &&
+        !isDeletedForMe(message)
     )
-    .sort((a, b) => {
-      const timeA =
-        Date.parse(getLastMessage(a.name)?.createdAt) || 0;
+    .slice(-1)[0];
+};
 
-      const timeB =
-        Date.parse(getLastMessage(b.name)?.createdAt) || 0;
+// NỘI DUNG TIN NHẮN CUỐI
+const getLastMessageText = (userId) => {
+  const last = getLastMessage(userId);
 
-      return timeB - timeA;
-    });
+  if (!last) {
+    return "Bắt đầu trò chuyện";
+  }
 
-  // TÌM KIẾM CUỘC TRÒ CHUYỆN
-  const filteredContacts = contacts.filter(
-    (person) =>
-      normalizeText(person.name).includes(
-        normalizeText(searchText)
-      )
-  );
+  if (last.recalled) {
+    return "Tin nhắn đã được thu hồi";
+  }
 
-  // DANH SÁCH TIN NHẮN ĐANG XEM
-  const conversation = messages.filter(
-    (message) =>
-      message.name === selected &&
-      !message.deleted
-  );
+  const prefix = isMyMessage(last)
+    ? "Bạn: "
+    : "";
 
-  const selectedPerson = contacts.find(
-    (person) => person.name === selected
-  );
+  if (last.text) {
+    return prefix + last.text;
+  }
+
+  if (last.image || last.images?.length) {
+    return prefix + "Đã gửi hình ảnh";
+  }
+
+  return "Tin nhắn";
+};
+
+// DANH SÁCH NGƯỜI DÙNG
+const contacts = getMockUsers()
+  .filter((account) => canChatWith(account.id))
+  .map((account) => {
+    const user = getFriendProfile(account.id);
+
+    if (!user) return null;
+
+    return {
+      ...user,
+      id: String(account.id),
+      name: user.fullName,
+    };
+  })
+  .filter(Boolean)
+  .sort((a, b) => {
+    const timeA =
+      Date.parse(getLastMessage(a.id)?.createdAt) || 0;
+
+    const timeB =
+      Date.parse(getLastMessage(b.id)?.createdAt) || 0;
+
+    return timeB - timeA;
+  });
+
+// TÌM KIẾM CUỘC TRÒ CHUYỆN
+const filteredContacts = contacts.filter(
+  (person) =>
+    normalizeText(
+      `${person.name} ${person.username}`
+    ).includes(normalizeText(searchText))
+);
+
+// DANH SÁCH TIN NHẮN ĐANG XEM
+const conversation = messages.filter(
+  (message) =>
+    selected &&
+    canChatWith(selected) &&
+    belongsToConversation(message, selected) &&
+    !isDeletedForMe(message)
+);
+
+// NGƯỜI ĐANG TRÒ CHUYỆN
+const selectedPerson = contacts.find(
+  (person) => person.id === selected
+);
 
   // TỰ ĐỘNG CUỘN XUỐNG TIN NHẮN MỚI
   useEffect(() => {
@@ -1880,15 +2085,16 @@ const [groupMembers, setGroupMembers] = useState([]);
   }, [selected, messages]);
 
   // ĐÓNG CUỘC TRÒ CHUYỆN NẾU BỊ CHẶN
-  useEffect(() => {
-    if (selected && isBlocked(selected)) {
-      imageReadVersion.current += 1;
-      setSelected("");
-      setDraft("");
-      setImages([]);
-      setIsLoadingImages(false);
-    }
-  }, [selected, blockedUsers]);
+useEffect(() => {
+  if (selected && !selectedPerson) {
+    imageReadVersion.current += 1;
+
+    setSelected("");
+    setDraft("");
+    setImages([]);
+    setIsLoadingImages(false);
+  }
+}, [selected, selectedPerson]);
 
   // LƯU TIN NHẮN
   const persistMessages = (next) => {
@@ -1915,106 +2121,118 @@ const [groupMembers, setGroupMembers] = useState([]);
   };
 
   // LƯU CUỘC TRÒ CHUYỆN
-  const persistConversations = (next) => {
-    try {
-      localStorage.setItem(
-        conversationsKey,
-        JSON.stringify(next)
-      );
-
-      setSavedConversations(next);
-
-      window.dispatchEvent(
-        new Event(MESSAGE_EVENT)
-      );
-
-      return true;
-    } catch {
-      alert("Không thể lưu cuộc trò chuyện!");
-      return false;
-    }
-  };
-
-  // CHỌN CUỘC TRÒ CHUYỆN
-  const selectConversation = (name) => {
-    if (isBlocked(name, readData(BLOCKED_KEY))) {
-      alert("Bạn đã chặn người dùng này!");
-      return;
-    }
-
-    if (name !== selected) {
-      imageReadVersion.current += 1;
-      setDraft("");
-      setImages([]);
-      setIsLoadingImages(false);
-    }
-
-    setSelected(name);
-  };
-
-  // TẠO CUỘC TRÒ CHUYỆN
-  const addConversation = (event) => {
-    event.preventDefault();
-
-    const name = newContact
-      .trim()
-      .replace(/\s+/g, " ");
-
-    if (!name) {
-      alert("Vui lòng nhập tên người muốn trò chuyện!");
-      return;
-    }
-
-    if (name.length > 60) {
-      alert("Tên không được vượt quá 60 ký tự!");
-      return;
-    }
-
-    if (
-      normalizeText(name) === normalizeText(DEFAULT_USER) ||
-      normalizeText(name) === normalizeText(profile.fullName)
-    ) {
-      alert("Vui lòng chọn người dùng khác!");
-      return;
-    }
-
-    if (isBlocked(name, readData(BLOCKED_KEY))) {
-      alert("Bạn cần bỏ chặn người dùng này trước!");
-      return;
-    }
-
-    const existing = contacts.find(
-      (person) =>
-        normalizeText(person.name) === normalizeText(name)
-    );
-
-    if (!existing) {
-  alert(
-    "Không tìm thấy người dùng. Vui lòng chọn người dùng trong danh sách!"
+const persistConversations = (next) => {
+  const success = saveAccountData(
+    conversationsKey,
+    next,
+    currentUserId
   );
 
-  return;
-}
+  if (!success) {
+    alert("Không thể lưu cuộc trò chuyện!");
+    return false;
+  }
 
-const finalName = existing.name;
-    const current = readConversations();
+  setSavedConversations(next);
 
-    if (!current.includes(finalName)) {
-      const success = persistConversations([
-        finalName,
-        ...current,
-      ]);
+  window.dispatchEvent(
+    new Event(MESSAGE_EVENT)
+  );
 
-      if (!success) return;
-    }
+  return true;
+};
 
-    selectConversation(finalName);
+// CHỌN CUỘC TRÒ CHUYỆN
+const selectConversation = (userId) => {
+  const targetId = String(userId);
 
-    setNewContact("");
-    setShowNewChat(false);
+  if (!canChatWith(targetId)) {
+    alert("Không thể trò chuyện với người dùng này!");
+    return;
+  }
+
+  if (targetId !== selected) {
+    imageReadVersion.current += 1;
+
+    setDraft("");
+    setImages([]);
+    setIsLoadingImages(false);
+  }
+
+  setSelected(targetId);
+};
+
+// TỰ ĐỘNG MỞ CUỘC TRÒ CHUYỆN TỪ BẢNG TIN
+useEffect(() => {
+  if (!requestedUser && !requestedUserId) {
+    return;
+  }
+
+  const person = requestedUserId
+    ? contacts.find(
+        (item) => item.id === requestedUserId
+      )
+    : contacts.find(
+        (item) =>
+          normalizeText(item.name) ===
+            normalizeText(requestedUser) ||
+          normalizeText(item.username) ===
+            normalizeText(requestedUser) ||
+          normalizeText(
+            getAccountById(item.id)?.fullName
+          ) === normalizeText(requestedUser)
+      );
+
+  if (person) {
+    selectConversation(person.id);
     setSearchText("");
-  };
+    setShowNewChat(false);
+  } else {
+    alert("Không thể mở cuộc trò chuyện này!");
+  }
 
+  const nextParams = new URLSearchParams(searchParams);
+
+  nextParams.delete("user");
+  nextParams.delete("userId");
+
+  setSearchParams(nextParams, {
+    replace: true,
+  });
+}, [requestedUser, requestedUserId]);
+
+// TẠO CUỘC TRÒ CHUYỆN
+const addConversation = (event) => {
+  event.preventDefault();
+
+  const targetId = String(newContact);
+
+  const person = contacts.find(
+    (item) => item.id === targetId
+  );
+
+  if (!person || !canChatWith(targetId)) {
+    alert("Vui lòng chọn người dùng hợp lệ!");
+    return;
+  }
+
+  const current = readConversations().map(String);
+
+  if (!current.includes(targetId)) {
+    const success = persistConversations([
+      targetId,
+      ...current,
+    ]);
+
+    if (!success) return;
+  }
+
+  selectConversation(targetId);
+
+  setNewContact("");
+  setShowNewChat(false);
+  setSearchText("");
+};
   // ĐÓNG POPUP TẠO NHÓM
 const closeGroupModal = () => {
   setShowNewGroup(false);
@@ -2042,7 +2260,15 @@ const handleCreateGroup = (event) => {
     return;
   }
 
-  if (groupMembers.length < 2) {
+  if (
+  !isUser(getCurrentAccount()) ||
+  !groupMembers.every((id) => canChatWith(id))
+) {
+  alert("Danh sách thành viên không hợp lệ!");
+  return;
+}
+
+if (groupMembers.length < 2) {
     alert("Vui lòng chọn ít nhất 2 thành viên!");
     return;
   }
@@ -2127,105 +2353,166 @@ const handleCreateGroup = (event) => {
     }
   };
 
-  // GỬI TIN NHẮN
-  const send = (event) => {
-    event.preventDefault();
+ // GỬI TIN NHẮN
+const send = (event) => {
+  event.preventDefault();
 
-    if (!selected || isLoadingImages) return;
+  if (!selected || isLoadingImages) return;
 
-    if (isBlocked(selected, readData(BLOCKED_KEY))) {
-      alert("Không thể nhắn tin với người đã chặn!");
-      return;
-    }
+  if (!canChatWith(selected)) {
+  alert("Không thể gửi tin nhắn!");
+  return;
+}
 
-    if (!draft.trim() && images.length === 0) {
-      return;
-    }
+  const content = draft.trim();
 
-    const nextMessage = {
-      id: `${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 7)}`,
+  if (!content && images.length === 0) {
+    return;
+  }
 
-      name: selected,
-      text: draft.trim(),
-      images,
-      image: images[0]?.data || "",
-      mine: true,
-      recalled: false,
-      deleted: false,
+  if (content.length > 2000) {
+    alert("Tin nhắn không được vượt quá 2000 ký tự!");
+    return;
+  }
 
-      time: new Date().toLocaleTimeString(
-        "vi-VN",
-        {
-          hour: "2-digit",
-          minute: "2-digit",
-        }
-      ),
+  const nextMessage = {
+    id: crypto.randomUUID(),
 
-      createdAt: new Date().toISOString(),
-    };
+    senderId: currentUserId,
+    receiverId: String(selected),
 
-    const current = readData(storeKey);
+    text: content,
+    images,
+    image: images[0]?.data || "",
 
-    if (persistMessages([...current, nextMessage])) {
-      setDraft("");
-      setImages([]);
-    }
+    recalled: false,
+    deletedBy: [],
+
+    time: new Date().toLocaleTimeString(
+      "vi-VN",
+      {
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+    ),
+
+    createdAt: new Date().toISOString(),
   };
 
-  // THU HỒI TIN NHẮN
-  const recall = (id) => {
-    const confirmed = window.confirm(
-      "Bạn có chắc chắn muốn thu hồi tin nhắn này không?"
-    );
+  const current = readData(storeKey);
 
-    if (!confirmed) return;
+if (persistMessages([...current, nextMessage])) {
 
-    const current = readData(storeKey);
+  // GỬI THÔNG BÁO CHO NGƯỜI NHẬN
+  addNotification({
+    type: "message",
 
-    persistMessages(
-      current.map((message) =>
-        message.id === id &&
-        message.mine &&
-        !message.deleted &&
-        !message.recalled
-          ? {
-              ...message,
-              recalled: true,
-              text: "",
-              image: "",
-              images: [],
-            }
-          : message
-      )
-    );
-  };
+    senderId: nextMessage.senderId,
+    receiverId: nextMessage.receiverId,
 
-  // XÓA TIN NHẮN
-  const remove = (id) => {
-    const confirmed = window.confirm(
-      "Bạn có muốn xóa tin nhắn khỏi hộp thư của mình không?"
-    );
+    messageId: nextMessage.id,
 
-    if (!confirmed) return;
+    message: content
+      ? "đã gửi cho bạn một tin nhắn."
+      : "đã gửi cho bạn hình ảnh.",
+  });
 
-    const current = readData(storeKey);
+  // XÓA NỘI DUNG SAU KHI GỬI
+  setDraft("");
+  setImages([]);
+}
+};
 
-    persistMessages(
-      current.map((message) =>
-        message.id === id
-          ? {
-              ...message,
-              deleted: true,
-              text: "",
-              image: "",
-              images: [],
-            }
-          : message
-      )
-    );
-  };
+// THU HỒI TIN NHẮN
+const recall = (id) => {
+  if (!canChatWith(selected)) {
+    return;
+  }
+  const current = readData(storeKey);
+
+  const target = current.find(
+    (message) => message.id === id
+  );
+
+  if (
+    !target ||
+    !isMyMessage(target) ||
+    !belongsToConversation(target, selected) ||
+    isDeletedForMe(target) ||
+    target.recalled
+  ) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Bạn có chắc chắn muốn thu hồi tin nhắn này không?"
+  );
+
+  if (!confirmed) return;
+
+  persistMessages(
+    current.map((message) =>
+      message.id === id
+        ? {
+            ...message,
+            recalled: true,
+            text: "",
+            image: "",
+            images: [],
+            recalledAt: new Date().toISOString(),
+          }
+        : message
+    )
+  );
+};
+
+// XÓA TIN NHẮN
+const remove = (id) => {
+  if (!canChatWith(selected)) {
+    return;
+  }
+  const current = readData(storeKey);
+
+  const target = current.find(
+    (message) => message.id === id
+  );
+
+  if (
+    !target ||
+    !belongsToConversation(target, selected) ||
+    isDeletedForMe(target)
+  ) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Bạn có muốn xóa tin nhắn khỏi hộp thư của mình không?"
+  );
+
+  if (!confirmed) return;
+
+  persistMessages(
+    current.map((message) => {
+      if (message.id !== id) {
+        return message;
+      }
+
+      const deletedBy = Array.isArray(message.deletedBy)
+        ? message.deletedBy.map(String)
+        : [];
+
+      return {
+        ...message,
+        deletedBy: [
+          ...new Set([
+            ...deletedBy,
+            currentUserId,
+          ]),
+        ],
+      };
+    })
+  );
+};
 
   return (
     <Shell
@@ -2295,29 +2582,30 @@ const handleCreateGroup = (event) => {
               onSubmit={addConversation}
             >
               <label htmlFor="new-chat-name">
-                Tên người muốn nhắn
-              </label>
+  Chọn người muốn nhắn
+</label>
 
-              <input
-                id="new-chat-name"
-                autoFocus
-                maxLength={60}
-                value={newContact}
-                onChange={(event) =>
-                  setNewContact(event.target.value)
-                }
-                placeholder="Nhập tên người dùng..."
-                list="message-contact-options"
-              />
+<select
+  id="new-chat-name"
+  value={newContact}
+  onChange={(event) =>
+    setNewContact(event.target.value)
+  }
+  required
+>
+  <option value="">
+    -- Chọn người dùng --
+  </option>
 
-              <datalist id="message-contact-options">
-                {contacts.map((person) => (
-                  <option
-                    key={person.id}
-                    value={person.name}
-                  />
-                ))}
-              </datalist>
+  {contacts.map((person) => (
+    <option
+      key={person.id}
+      value={person.id}
+    >
+      {person.name} (@{person.username})
+    </option>
+  ))}
+</select>
 
               <div>
                 <button type="submit">
@@ -2350,31 +2638,33 @@ const handleCreateGroup = (event) => {
 
             {filteredContacts.map((person) => {
               const lastMessage = getLastMessage(
-                person.name
-              );
+  person.id
+);
 
               return (
                 <button
                   type="button"
                   key={person.id}
                   className={
-                    selected === person.name
+                    selected === person.id
                       ? "selected"
                       : ""
                   }
                   onClick={() =>
-                    selectConversation(person.name)
+                    selectConversation(person.id)
                   }
                 >
-                  <span className="person-avatar small">
-                    {person.avatar}
-                  </span>
+                  <span
+  className={`person-avatar small ${person.color || "blue"}`}
+>
+  <ProfileAvatar profile={person} />
+</span>
 
                   <span className="message-contact-info">
                     <b>{person.name}</b>
 
                     <small>
-                      {getLastMessageText(person.name)}
+                      {getLastMessageText(person.id)}
                     </small>
                   </span>
 
@@ -2392,45 +2682,34 @@ const handleCreateGroup = (event) => {
         {/* KHUNG TRÒ CHUYỆN */}
         <div className="message-conversation">
 
-          {selected ? (
+          {selectedPerson ? (
             <>
               {/* HEADER CUỘC TRÒ CHUYỆN */}
               <header className="message-conversation-heading">
+  <Link
+    to={`/profile?userId=${selected}`}
+    className="person-avatar small"
+  >
+    <ProfileAvatar
+      profile={
+        selectedPerson || {
+          fullName: "Người dùng",
+          avatar: "",
+        }
+      }
+    />
+  </Link>
 
-                <Link
-                  to={`/profile?user=${encodeURIComponent(
-                    selected
-                  )}`}
-                  className="person-avatar small"
-                >
-                  {selectedPerson?.avatar ||
-                    getAvatar(selected)}
-                </Link>
+  <div className="message-heading-info">
+    <Link to={`/profile?userId=${selected}`}>
+      <b>{selectedPerson?.name}</b>
+    </Link>
 
-                <div className="message-heading-info">
-                  <Link
-                    to={`/profile?user=${encodeURIComponent(
-                      selected
-                    )}`}
-                  >
-                    <b>{selected}</b>
-                  </Link>
-
-                  <small>
-                    Cuộc trò chuyện cá nhân
-                  </small>
-                </div>
-
-                <Link
-                  className="message-view-profile"
-                  to={`/profile?user=${encodeURIComponent(
-                    selected
-                  )}`}
-                >
-                  ⓘ
-                </Link>
-              </header>
-
+    <small>
+      Cuộc trò chuyện cá nhân
+    </small>
+  </div>
+</header>
               {/* NỘI DUNG TIN NHẮN */}
               <div
                 className="message-list"
@@ -2438,6 +2717,7 @@ const handleCreateGroup = (event) => {
               >
 
                 {conversation.map((message) => {
+                  const mine = isMyMessage(message);
                   const attachedImages =
                     message.images?.length
                       ? message.images.map(
@@ -2451,29 +2731,26 @@ const handleCreateGroup = (event) => {
                     <div
                       key={message.id}
                       className={`message-row ${
-                        message.mine ? "mine" : ""
+                        mine ? "mine" : ""
                       }`}
                     >
 
                       {/* AVATAR */}
-                      <div className="message-sender-avatar">
-                        {message.mine ? (
-                          <ProfileAvatar profile={profile} />
-                        ) : (
-                          selectedPerson?.avatar ||
-                          getAvatar(selected)
-                        )}
-                      </div>
+                     <div className="message-sender-avatar">
+  <ProfileAvatar
+    profile={mine ? profile : selectedPerson}
+  />
+</div>
 
                       {/* TIN NHẮN */}
                       <div
                         className={`message-bubble ${
-                          message.mine ? "mine" : ""
+                          mine ? "mine" : ""
                         }`}
                       >
                         {message.recalled ? (
                           <i className="message-recalled">
-                            {message.mine
+                            {mine
                               ? "Bạn đã thu hồi tin nhắn này."
                               : "Tin nhắn đã được thu hồi."}
                           </i>
@@ -2514,7 +2791,7 @@ const handleCreateGroup = (event) => {
                         <small>{message.time}</small>
 
                         <div className="message-actions">
-                          {message.mine &&
+                          {mine &&
                             !message.recalled && (
                               <button
                                 type="button"
@@ -2548,7 +2825,7 @@ const handleCreateGroup = (event) => {
                     <b>Bắt đầu cuộc trò chuyện</b>
 
                     <p>
-                      Hãy gửi lời chào tới {selected}!
+                     Hãy gửi lời chào tới {selectedPerson?.name}!
                     </p>
                   </div>
                 )}
@@ -2706,19 +2983,21 @@ const handleCreateGroup = (event) => {
             key={person.id}
             className="message-group-member"
           >
-            <span className="person-avatar small">
-              {person.avatar}
-            </span>
+            <span
+  className={`person-avatar small ${person.color || "blue"}`}
+>
+  <ProfileAvatar profile={person} />
+</span>
 
             <strong>{person.name}</strong>
 
             <input
               type="checkbox"
               checked={groupMembers.includes(
-                person.name
-              )}
+  person.id
+)}
               onChange={() =>
-                toggleGroupMember(person.name)
+                toggleGroupMember(person.id)
               }
             />
           </label>

@@ -1,100 +1,26 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { addNotification } from "../notification/notificationUtils";
+import {
+  ACCOUNT_EVENT,
+  getCurrentAccount,
+  getMockUsers,
+  getAccountById,
+  isUser,
+} from "../../utils/mockAccounts";
 
-const STORAGE_KEY = "miniSocialFriendRequests";
-const BLOCKED_KEY = "miniSocialBlockedUsers";
+import {
+  FRIEND_EVENT,
+  BLOCKED_EVENT,
+  getFriendProfile,
+  getFriendStatus,
+  getMutualFriends,
+  getRelationship,
+  sendFriendRequest,
+  cancelFriendRequest,
+} from "../../utils/friendUtils";
 
-const REQUEST_EVENT = "miniSocialFriendRequestsUpdated";
-const BLOCKED_EVENT = "miniSocialBlockedUsersUpdated";
-
-const suggestedUsers = [
-  {
-    id: 1,
-    name: "Nguyễn Văn An",
-    username: "nguyenvanan",
-    avatar: "A",
-    bio: "Yêu thích công nghệ và lập trình.",
-    mutualFriends: 5,
-    color: "blue",
-  },
-  {
-    id: 2,
-    name: "Trần Thị Bình",
-    username: "tranthibinh",
-    avatar: "B",
-    bio: "Thích đọc sách và du lịch.",
-    mutualFriends: 3,
-    color: "pink",
-  },
-  {
-    id: 3,
-    name: "Lê Minh Hoàng",
-    username: "leminhhoang",
-    avatar: "H",
-    bio: "Sinh viên Công nghệ thông tin.",
-    mutualFriends: 8,
-    color: "orange",
-  },
-  {
-    id: 4,
-    name: "Phạm Thu Hà",
-    username: "phamthuha",
-    avatar: "H",
-    bio: "Chia sẻ những điều tích cực mỗi ngày.",
-    mutualFriends: 2,
-    color: "purple",
-  },
-  {
-    id: 5,
-    name: "Nguyễn Minh Anh",
-    username: "nguyenminhanh",
-    avatar: "M",
-    bio: "Kết nối và học hỏi cùng mọi người.",
-    mutualFriends: 4,
-    color: "green",
-  },
-  {
-    id: 6,
-    name: "Đỗ Quang Minh",
-    username: "doquangminh",
-    avatar: "Q",
-    bio: "Đam mê thể thao và công nghệ.",
-    mutualFriends: 7,
-    color: "orange",
-  },
-  {
-    id: 7,
-    name: "Vũ Thu Trang",
-    username: "vuthutrang",
-    avatar: "T",
-    bio: "Thích khám phá và trải nghiệm.",
-    mutualFriends: 1,
-    color: "pink",
-  },
-];
-
-// ĐỌC DỮ LIỆU LOCALSTORAGE
-function readStorage(key) {
-  try {
-    const data = JSON.parse(
-      localStorage.getItem(key) || "[]"
-    );
-
-    return Array.isArray(data)
-      ? data.filter(
-          (item) =>
-            item &&
-            typeof item === "object" &&
-            !Array.isArray(item)
-        )
-      : [];
-  } catch (error) {
-    console.error("Không thể đọc dữ liệu:", error);
-    return [];
-  }
-}
+const PROFILE_EVENT = "miniSocialProfileUpdated";
 
 // CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
 function normalizeText(value) {
@@ -106,222 +32,195 @@ function normalizeText(value) {
     .trim();
 }
 
-// SO SÁNH NGƯỜI DÙNG
-function isSameUser(first, second) {
-  if (!first || !second) return false;
+// LẤY DANH SÁCH GỢI Ý KẾT BẠN
+function readSuggestions() {
+  const account = getCurrentAccount();
 
-  if (first.username && second.username) {
-    return first.username === second.username;
-  }
+  // CHỈ USER ĐƯỢC SỬ DỤNG CHỨC NĂNG KẾT BẠN
+  if (!isUser(account)) return [];
 
-  return (
-    Boolean(first.name && second.name) &&
-    normalizeText(first.name) ===
-      normalizeText(second.name)
-  );
+  return getMockUsers()
+    .filter(
+      (user) =>
+        String(user.id) !== String(account.id)
+    )
+    .map((user) => {
+      const profile = getFriendProfile(user.id);
+
+      if (!profile) return null;
+
+      const status = getFriendStatus(user.id);
+
+      return {
+        id: user.id,
+        name: profile.fullName,
+        username: profile.username,
+        avatar: profile.avatar || "",
+        bio: profile.bio || "",
+        color: profile.color || "blue",
+
+        status,
+
+        mutualFriends: getMutualFriends(
+          account.id,
+          user.id
+        ),
+      };
+    })
+    .filter(Boolean)
+    .filter(
+      (user) =>
+        ["none", "sent"].includes(user.status)
+    )
+    .sort(
+      (a, b) =>
+        b.mutualFriends - a.mutualFriends
+    );
 }
 
 function FriendSuggestions() {
-  const [requests, setRequests] = useState(
-    () => readStorage(STORAGE_KEY)
-  );
+  const [suggestedUsers, setSuggestedUsers] =
+    useState(readSuggestions);
 
-  const [blockedUsers, setBlockedUsers] = useState(
-    () => readStorage(BLOCKED_KEY)
-  );
-
-  const [searchValue, setSearchValue] = useState("");
+  const [searchValue, setSearchValue] =
+    useState("");
 
   // ĐỒNG BỘ DỮ LIỆU
   useEffect(() => {
     const refreshData = () => {
-      setRequests(readStorage(STORAGE_KEY));
-      setBlockedUsers(readStorage(BLOCKED_KEY));
+      setSuggestedUsers(readSuggestions());
     };
 
     refreshData();
 
-    window.addEventListener(
-      REQUEST_EVENT,
-      refreshData
-    );
-
-    window.addEventListener(
+    const events = [
+      FRIEND_EVENT,
       BLOCKED_EVENT,
-      refreshData
-    );
+      ACCOUNT_EVENT,
+      PROFILE_EVENT,
+      "storage",
+      "focus",
+    ];
 
-    window.addEventListener("storage", refreshData);
-    window.addEventListener("focus", refreshData);
+    events.forEach((event) => {
+      window.addEventListener(
+        event,
+        refreshData
+      );
+    });
 
     return () => {
-      window.removeEventListener(
-        REQUEST_EVENT,
-        refreshData
-      );
-
-      window.removeEventListener(
-        BLOCKED_EVENT,
-        refreshData
-      );
-
-      window.removeEventListener(
-        "storage",
-        refreshData
-      );
-
-      window.removeEventListener(
-        "focus",
-        refreshData
-      );
+      events.forEach((event) => {
+        window.removeEventListener(
+          event,
+          refreshData
+        );
+      });
     };
   }, []);
-
-  // LƯU LỜI MỜI KẾT BẠN
-  const saveRequests = (nextRequests) => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(nextRequests)
-      );
-
-      setRequests(nextRequests);
-
-      window.dispatchEvent(
-        new Event(REQUEST_EVENT)
-      );
-
-      return true;
-    } catch (error) {
-      console.error("Không thể lưu lời mời:", error);
-
-      alert("Không thể lưu dữ liệu. Vui lòng thử lại!");
-
-      return false;
-    }
-  };
-
-  // KIỂM TRA TRẠNG THÁI KẾT BẠN
-  const getFriendStatus = (user) => {
-    const request = requests.find(
-      (item) => isSameUser(item, user)
-    );
-
-    return request?.status || "none";
-  };
 
   // LỌC VÀ SẮP XẾP GỢI Ý
   const filteredSuggestions = useMemo(() => {
     const keyword = normalizeText(searchValue);
 
     return suggestedUsers
-      .filter((user) => {
-        const request = requests.find(
-          (item) => isSameUser(item, user)
-        );
-
-        const status = request?.status || "none";
-
-        const blocked = blockedUsers.some(
-          (item) => isSameUser(item, user)
-        );
-
-        const matchesKeyword = normalizeText(
+      .filter((user) =>
+        normalizeText(
           `${user.name} ${user.username} ${user.bio}`
-        ).includes(keyword);
-
-        return (
-          !blocked &&
-          !["accepted", "received", "pending"].includes(
-            status
-          ) &&
-          matchesKeyword
-        );
-      })
+        ).includes(keyword)
+      )
       .sort(
-        (a, b) => b.mutualFriends - a.mutualFriends
+        (a, b) =>
+          b.mutualFriends - a.mutualFriends
       );
-  }, [requests, blockedUsers, searchValue]);
+  }, [suggestedUsers, searchValue]);
 
   // GỬI LỜI MỜI KẾT BẠN
   const handleSendRequest = (user) => {
-    const currentRequests = readStorage(STORAGE_KEY);
-    const currentBlocked = readStorage(BLOCKED_KEY);
+    const account = getCurrentAccount();
 
-    const blocked = currentBlocked.some(
-      (item) => isSameUser(item, user)
-    );
+    if (!isUser(account)) {
+  alert("Bạn không có quyền thực hiện chức năng này!");
+  return;
+}
 
-    if (blocked) {
-      alert("Bạn cần bỏ chặn người dùng này trước.");
+if (!isUser(getAccountById(user.id))) {
+  alert("Tài khoản người dùng không hợp lệ!");
+  setSuggestedUsers(readSuggestions());
+  return;
+}
+
+    const status = getFriendStatus(user.id);
+
+    if (status === "blocked") {
+      alert("Không thể kết bạn với người dùng này!");
       return;
     }
 
-    const exists = currentRequests.some(
-      (item) =>
-        isSameUser(item, user) &&
-        ["sent", "received", "pending", "accepted"].includes(
-          item.status
-        )
-    );
+    if (status !== "none") {
+      alert(
+        "Đã tồn tại lời mời hoặc quan hệ bạn bè!"
+      );
 
-    if (exists) {
-      alert("Đã tồn tại lời mời hoặc quan hệ bạn bè.");
+      setSuggestedUsers(readSuggestions());
       return;
     }
 
-    const newRequest = {
-      id: Date.now(),
-      name: user.name,
-      username: user.username,
-      avatar: user.avatar,
-      bio: user.bio,
-      color: user.color,
-      mutualFriends: user.mutualFriends,
-      status: "sent",
-      createdAt: new Date().toISOString(),
-    };
+    if (sendFriendRequest(user.id)) {
+      setSuggestedUsers(readSuggestions());
 
-    const updated = [
-      ...currentRequests.filter(
-        (item) => !isSameUser(item, user)
-      ),
-      newRequest,
-    ];
-
-    if (saveRequests(updated)) {
-      addNotification({
-  type: "friend_request",
-  name: user.name,
-  username: user.username,
-  avatar: user.avatar || "",
-  isMine: false,
-  message: `Bạn đã gửi lời mời kết bạn cho ${user.name}.`,
-});
       alert(
         `Đã gửi lời mời kết bạn đến ${user.name}!`
       );
+    } else {
+      alert("Không thể gửi lời mời kết bạn!");
     }
   };
 
   // HỦY LỜI MỜI KẾT BẠN
   const handleCancelRequest = (user) => {
+    const account = getCurrentAccount();
+
+    if (!isUser(account)) {
+  alert("Bạn không có quyền thực hiện chức năng này!");
+  return;
+}
+
+if (!isUser(getAccountById(user.id))) {
+  alert("Tài khoản người dùng không hợp lệ!");
+  setSuggestedUsers(readSuggestions());
+  return;
+}
+
+    const relationship = getRelationship(
+      account.id,
+      user.id
+    );
+
+    if (
+      !relationship ||
+      relationship.status !== "pending" ||
+      String(relationship.senderId) !==
+        String(account.id)
+    ) {
+      alert("Lời mời không còn tồn tại!");
+
+      setSuggestedUsers(readSuggestions());
+      return;
+    }
+
     const confirmed = window.confirm(
       `Bạn có chắc muốn hủy lời mời kết bạn với ${user.name}?`
     );
 
     if (!confirmed) return;
 
-    const updated = readStorage(STORAGE_KEY).filter(
-      (item) =>
-        !(
-          isSameUser(item, user) &&
-          item.status === "sent"
-        )
-    );
+    if (cancelFriendRequest(relationship.id)) {
+      setSuggestedUsers(readSuggestions());
 
-    if (saveRequests(updated)) {
       alert("Đã hủy lời mời kết bạn.");
+    } else {
+      alert("Không thể hủy lời mời kết bạn!");
     }
   };
 
@@ -428,10 +327,10 @@ function FriendSuggestions() {
           ) : (
             <div className="friend-suggestions-list">
               {filteredSuggestions.map((user, index) => {
-                const status = getFriendStatus(user);
+                const status = user.status;
 
                 const profileUrl =
-                  `/profile?user=${encodeURIComponent(user.name)}`;
+  `/profile?userId=${user.id}`;
 
                 return (
                   <div
@@ -449,7 +348,20 @@ function FriendSuggestions() {
                       className={`suggestion-avatar ${user.color}`}
                       aria-label={`Xem hồ sơ ${user.name}`}
                     >
-                      {user.avatar}
+                      {user.avatar ? (
+  <img
+    src={user.avatar}
+    alt={`Ảnh đại diện ${user.name}`}
+    className="synced-avatar-image"
+  />
+) : (
+  String(user.name || "U")
+    .trim()
+    .split(/\s+/)
+    .pop()
+    ?.charAt(0)
+    .toUpperCase() || "U"
+)}
                     </Link>
 
                     {/* THÔNG TIN */}

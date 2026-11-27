@@ -1,6 +1,22 @@
 
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Navigate } from "react-router-dom";
+
+import {
+  ACCOUNT_EVENT,
+  getCurrentAccount,
+  getAccountById,
+  getAccountByName,
+  readAccountData,
+  getMockUsers,
+  switchMockAccount,
+  logoutMockAccount,
+  isAdmin,
+} from "../../utils/mockAccounts";
+
+import {
+  addNotification,
+} from "../notification/notificationUtils";
 
 const REPORT_KEY = "miniSocialReports";
 const POST_KEY = "miniSocialPosts";
@@ -9,8 +25,6 @@ const PROFILE_KEY = "miniSocialProfile";
 const REPORT_EVENT = "miniSocialReportsUpdated";
 const POST_EVENT = "miniSocialPostsUpdated";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
-
-const CURRENT_USER = "Nguyễn Văn A";
 
 // ĐỌC DỮ LIỆU LOCALSTORAGE
 function readData(key) {
@@ -39,24 +53,42 @@ function readReports() {
     }));
 }
 
-// ĐỌC THÔNG TIN CÁ NHÂN
-function readProfile() {
-  const defaultProfile = {
-    fullName: CURRENT_USER,
-    avatar: "",
-  };
+// TÌM TÀI KHOẢN THEO ID HOẶC TÊN
+function findReportAccount(accountId, name) {
+  if (accountId != null) {
+    return getAccountById(accountId);
+  }
+
+  return getAccountByName(name);
+}
+
+// ĐỌC HỒ SƠ THEO TÀI KHOẢN
+function readProfile(account) {
+  if (!account) return null;
 
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(PROFILE_KEY) || "{}"
+    const legacyProfile =
+      String(account.id) === "1"
+        ? JSON.parse(
+            localStorage.getItem(PROFILE_KEY) || "{}"
+          )
+        : {};
+
+    const savedProfile = readAccountData(
+      PROFILE_KEY,
+      legacyProfile,
+      account.id
     );
 
     return {
-      ...defaultProfile,
-      ...saved,
+      ...account,
+      ...savedProfile,
+      id: account.id,
+      username: account.username,
+      email: account.email,
     };
   } catch {
-    return defaultProfile;
+    return account;
   }
 }
 
@@ -117,13 +149,19 @@ function getImages(images, image) {
 }
 
 function Reports() {
+  const [currentAdmin, setCurrentAdmin] =
+  useState(getCurrentAccount);
+
+const [selectedAccount, setSelectedAccount] =
+  useState("");
+
+const [viewingReportId, setViewingReportId] =
+  useState(null);
   const [reports, setReports] = useState(readReports);
 
   const [posts, setPosts] = useState(
     () => readData(POST_KEY)
   );
-
-  const [profile, setProfile] = useState(readProfile);
 
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -131,20 +169,21 @@ function Reports() {
   // ĐỒNG BỘ DỮ LIỆU
   useEffect(() => {
     const refreshData = () => {
-      setReports(readReports());
-      setPosts(readData(POST_KEY));
-      setProfile(readProfile());
-    };
+  setCurrentAdmin(getCurrentAccount());
+  setReports(readReports());
+  setPosts(readData(POST_KEY));
+};
 
     refreshData();
 
     const events = [
-      REPORT_EVENT,
-      POST_EVENT,
-      PROFILE_EVENT,
-      "storage",
-      "focus",
-    ];
+  REPORT_EVENT,
+  POST_EVENT,
+  PROFILE_EVENT,
+  ACCOUNT_EVENT,
+  "storage",
+  "focus",
+];
 
     events.forEach((event) => {
       window.addEventListener(event, refreshData);
@@ -158,17 +197,30 @@ function Reports() {
   }, []);
 
   // HIỂN THỊ TÊN NGƯỜI DÙNG
-  const displayName = (name) => {
-    if (name === CURRENT_USER) {
-      return profile.fullName || CURRENT_USER;
-    }
+const displayName = (name, accountId) => {
+  const account = findReportAccount(
+    accountId,
+    name
+  );
 
-    return name || "Không xác định";
-  };
+  if (account) {
+    return (
+      readProfile(account)?.fullName ||
+      account.fullName
+    );
+  }
+
+  return name || "Không xác định";
+};
 
   // LƯU BÁO CÁO
   const saveReports = (nextReports) => {
-    try {
+  if (!isAdmin()) {
+    alert("Bạn không có quyền quản trị!");
+    return false;
+  }
+
+  try {
       localStorage.setItem(
         REPORT_KEY,
         JSON.stringify(nextReports)
@@ -220,8 +272,8 @@ function Reports() {
 
     const searchableText = normalizeText(
       [
-        displayName(report.postAuthor),
-        displayName(report.reporter),
+        displayName(report.postAuthor, report.postAuthorId),
+        displayName(report.reporter, report.reporterId),
         report.reason,
         report.detail,
         report.postContent,
@@ -235,29 +287,94 @@ function Reports() {
     );
   });
 
-  // CẬP NHẬT TRẠNG THÁI
-  const updateReportStatus = (
-    id,
-    status,
-    action
-  ) => {
-    const current = readReports();
+  // THÔNG BÁO KẾT QUẢ XỬ LÝ BÁO CÁO
+const notifyReportResult = (report, action) => {
+  const admin = getCurrentAccount();
 
-    const nextReports = current.map((report) =>
-      report.id === id &&
-      report.status === "pending"
-        ? {
-            ...report,
-            status,
-            action,
-            processedAt: new Date().toISOString(),
-          }
-        : report
-    );
+  const reporter = findReportAccount(
+    report.reporterId,
+    report.reporter
+  );
 
-    return saveReports(nextReports);
-  };
+  if (!isAdmin(admin) || !reporter) return;
 
+  let message = "";
+
+  switch (action) {
+    case "deleted_post":
+      message =
+        "đã xử lý báo cáo của bạn và xóa bài viết vi phạm.";
+      break;
+
+    case "rejected":
+      message =
+        "đã xem xét và từ chối báo cáo của bạn.";
+      break;
+
+    default:
+      message =
+        "đã xem xét báo cáo của bạn và giữ nguyên bài viết.";
+  }
+
+  addNotification({
+    type: "report",
+    senderId: admin.id,
+    receiverId: reporter.id,
+    message,
+  });
+};
+
+ // CẬP NHẬT TRẠNG THÁI
+const updateReportStatus = (
+  id,
+  status,
+  action
+) => {
+  const admin = getCurrentAccount();
+
+  if (!isAdmin(admin)) {
+    alert("Bạn không có quyền quản trị!");
+    return false;
+  }
+
+  const current = readReports();
+
+  const target = current.find(
+    (report) =>
+      String(report.id) === String(id)
+  );
+
+  if (!target) {
+    alert("Báo cáo không còn tồn tại!");
+    return false;
+  }
+
+  if (target.status !== "pending") {
+    alert("Báo cáo này đã được xử lý!");
+    return false;
+  }
+
+  const nextReports = current.map((report) =>
+    String(report.id) === String(id)
+      ? {
+          ...report,
+          status,
+          action,
+          processedById: admin.id,
+          processedBy: admin.fullName,
+          processedAt: new Date().toISOString(),
+        }
+      : report
+  );
+
+  if (!saveReports(nextReports)) {
+    return false;
+  }
+
+  notifyReportResult(target, action);
+
+  return true;
+};
   // ĐÁNH DẤU ĐÃ XỬ LÝ
   const handleResolve = (id) => {
     const confirmed = window.confirm(
@@ -297,125 +414,396 @@ function Reports() {
   };
 
   // XÓA BÁO CÁO
-  const handleDeleteReport = (id) => {
-    const confirmed = window.confirm(
-      "Bạn có chắc chắn muốn xóa báo cáo này?"
-    );
+const handleDeleteReport = (id) => {
+  const admin = getCurrentAccount();
 
-    if (!confirmed) return;
+  if (!isAdmin(admin)) {
+    alert("Bạn không có quyền quản trị!");
+    return;
+  }
 
-    const current = readReports();
+  const current = readReports();
 
+  const target = current.find(
+    (report) =>
+      String(report.id) === String(id)
+  );
+
+  if (!target) {
+    alert("Báo cáo không còn tồn tại!");
+    return;
+  }
+
+  if (target.status === "pending") {
+    alert("Hãy xử lý báo cáo trước khi xóa!");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Bạn có chắc chắn muốn xóa báo cáo này?"
+  );
+
+  if (!confirmed) return;
+
+  const latestReports = readReports();
+
+  if (
     saveReports(
-      current.filter(
-        (report) => report.id !== id
+      latestReports.filter(
+        (report) =>
+          String(report.id) !== String(id)
       )
-    );
-  };
+    )
+  ) {
+    alert("Đã xóa báo cáo!");
+  }
+};
 
   // XÓA BÀI VIẾT VI PHẠM
-  const handleDeletePost = (report) => {
-    if (report.postId == null) {
-      alert("Không xác định được bài viết!");
+const handleDeletePost = (report) => {
+  const admin = getCurrentAccount();
+
+  if (!isAdmin(admin)) {
+    alert("Bạn không có quyền quản trị!");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Bạn có chắc chắn muốn xóa bài viết vi phạm này không?"
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const currentReports = readReports();
+
+    const targetReport = currentReports.find(
+      (item) =>
+        String(item.id) === String(report.id)
+    );
+
+    if (
+      !targetReport ||
+      targetReport.status !== "pending" ||
+      targetReport.postId == null
+    ) {
+      alert("Báo cáo không còn khả dụng!");
       return;
     }
 
-    const confirmed = window.confirm(
-      "Bạn có chắc chắn muốn xóa bài viết vi phạm này không?"
+    const currentPosts = readData(POST_KEY);
+
+    const targetPost = currentPosts.find(
+      (post) =>
+        post &&
+        String(post.id) ===
+          String(targetReport.postId)
     );
 
-    if (!confirmed) return;
+    if (!targetPost) {
+      setPosts(currentPosts);
+      alert("Bài viết không còn tồn tại!");
+      return;
+    }
 
-    try {
-      const currentPosts = readData(POST_KEY);
+    // XÓA BÀI VIẾT VI PHẠM
+    const updatedPosts = currentPosts.filter(
+      (post) =>
+        String(post?.id) !==
+        String(targetReport.postId)
+    );
 
-      const exists = currentPosts.some(
-        (post) =>
-          String(post.id) === String(report.postId)
+    // LẤY CÁC BÁO CÁO LIÊN QUAN
+    const relatedReports = currentReports.filter(
+      (item) =>
+        String(item.postId) ===
+          String(targetReport.postId) &&
+        item.status === "pending"
+    );
+
+    const processedAt = new Date().toISOString();
+
+    // CẬP NHẬT TRẠNG THÁI BÁO CÁO
+    const updatedReports = currentReports.map(
+      (item) =>
+        String(item.postId) ===
+          String(targetReport.postId) &&
+        item.status === "pending"
+          ? {
+              ...item,
+              status: "resolved",
+              action: "deleted_post",
+              processedById: admin.id,
+              processedBy: admin.fullName,
+              processedAt,
+            }
+          : item
+    );
+
+    // LƯU BÀI VIẾT
+    localStorage.setItem(
+      POST_KEY,
+      JSON.stringify(updatedPosts)
+    );
+
+    setPosts(updatedPosts);
+
+    window.dispatchEvent(
+      new Event(POST_EVENT)
+    );
+
+    // LƯU BÁO CÁO
+    if (!saveReports(updatedReports)) {
+      alert(
+        "Bài viết đã bị xóa nhưng chưa cập nhật được báo cáo!"
+      );
+      return;
+    }
+
+    // THÔNG BÁO CHO NGƯỜI BÁO CÁO
+    const notifiedUsers = new Set();
+
+    relatedReports.forEach((item) => {
+      const reporter = findReportAccount(
+        item.reporterId,
+        item.reporter
       );
 
-      if (!exists) {
-        setPosts(currentPosts);
+      if (
+        reporter &&
+        !notifiedUsers.has(String(reporter.id))
+      ) {
+        notifiedUsers.add(String(reporter.id));
 
-        alert("Bài viết không còn tồn tại!");
-        return;
-      }
-
-      const updatedPosts = currentPosts.filter(
-        (post) =>
-          String(post.id) !== String(report.postId)
-      );
-
-      localStorage.setItem(
-        POST_KEY,
-        JSON.stringify(updatedPosts)
-      );
-
-      setPosts(updatedPosts);
-
-      // ĐỒNG BỘ VỚI HOME FEED VÀ SAVED POSTS
-      window.dispatchEvent(
-        new Event(POST_EVENT)
-      );
-
-      // CẬP NHẬT CÁC BÁO CÁO LIÊN QUAN
-      const currentReports = readReports();
-
-      const updatedReports = currentReports.map(
-        (item) =>
-          String(item.postId) ===
-            String(report.postId) &&
-          item.status === "pending"
-            ? {
-                ...item,
-                status: "resolved",
-                action: "deleted_post",
-                processedAt:
-                  new Date().toISOString(),
-              }
-            : item
-      );
-
-      if (saveReports(updatedReports)) {
-        alert("Đã xóa bài viết vi phạm!");
-      } else {
-        alert(
-          "Bài viết đã bị xóa nhưng chưa cập nhật được báo cáo!"
+        notifyReportResult(
+          item,
+          "deleted_post"
         );
       }
-    } catch (error) {
-      console.error("Lỗi khi xóa bài viết:", error);
+    });
 
-      alert("Không thể xóa bài viết!");
+    // THÔNG BÁO CHO CHỦ BÀI VIẾT
+    const author = findReportAccount(
+      targetPost.authorId,
+      targetPost.author
+    );
+
+    if (author) {
+      addNotification({
+        type: "report",
+        senderId: admin.id,
+        receiverId: author.id,
+        message:
+          "đã xóa bài viết của bạn do vi phạm quy định cộng đồng.",
+      });
     }
-  };
+
+    alert("Đã xóa bài viết vi phạm!");
+  } catch (error) {
+    console.error(
+      "Lỗi khi xóa bài viết:",
+      error
+    );
+
+    alert("Không thể hoàn tất xử lý bài viết!");
+  }
+};
 
   // XÓA BỘ LỌC
   const resetFilters = () => {
     setSearch("");
     setFilter("all");
   };
+  // CHUYỂN ĐỔI SANG TÀI KHOẢN USER
+const handleSwitchAccount = () => {
+  if (!isAdmin()) return;
+
+  const account = getMockUsers().find(
+    (item) =>
+      String(item.id) === selectedAccount
+  );
+
+  if (!account) {
+    alert("Vui lòng chọn tài khoản người dùng!");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Chuyển sang tài khoản ${account.fullName}?`
+  );
+
+  if (!confirmed) return;
+
+  const success = switchMockAccount(account.id);
+
+  if (!success) {
+    alert("Không thể chuyển đổi tài khoản!");
+    return;
+  }
+
+  window.location.replace("/feed");
+};
+
+// ĐĂNG XUẤT ADMIN
+const handleLogout = () => {
+  const confirmed = window.confirm(
+    "Bạn có chắc chắn muốn đăng xuất không?"
+  );
+
+  if (!confirmed) return;
+
+  try {
+    logoutMockAccount();
+
+    window.location.replace("/login");
+  } catch {
+    alert("Không thể đăng xuất. Vui lòng thử lại!");
+  }
+};
+
+// MỞ CHI TIẾT BÁO CÁO
+const handleViewReportedPost = (report) => {
+  if (!isAdmin()) return;
+
+  setViewingReportId(report.id);
+};
+
+// ĐÓNG CHI TIẾT BÁO CÁO
+const handleCloseReportedPost = () => {
+  setViewingReportId(null);
+};
+
+// LẤY BÁO CÁO ĐANG XEM
+const viewingReport = reports.find(
+  (report) =>
+    String(report.id) === String(viewingReportId)
+);
+
+const viewingPost = viewingReport
+  ? getOriginalPost(viewingReport.postId)
+  : null;
+
+// ĐÓNG POPUP BẰNG PHÍM ESC
+useEffect(() => {
+  if (viewingReportId == null) return;
+
+  const handleEscape = (event) => {
+    if (event.key === "Escape") {
+      setViewingReportId(null);
+    }
+  };
+
+  window.addEventListener("keydown", handleEscape);
+
+  return () => {
+    window.removeEventListener(
+      "keydown",
+      handleEscape
+    );
+  };
+}, [viewingReportId]);
+
+// KIỂM TRA QUYỀN TRƯỚC KHI HIỂN THỊ
+if (!currentAdmin) {
+  return <Navigate to="/login" replace />;
+}
+
+if (!isAdmin(currentAdmin)) {
+  return <Navigate to="/feed" replace />;
+}
 
   return (
     <div className="admin-reports-page">
 
-      {/* HEADER */}
-      <header className="admin-reports-header">
-        <div>
-          <h1>Quản lý báo cáo</h1>
+      
+{/* HEADER QUẢN TRỊ */}
+<header className="admin-reports-header">
 
-          <p>
-            Kiểm tra và xử lý các bài viết bị báo cáo.
-          </p>
-        </div>
+  <div className="admin-heading">
+    <span className="admin-brand">
+      🦋 MSN ADMIN
+    </span>
 
-        <Link
-          to="/feed"
-          className="admin-back-button"
-        >
-          ← Quay lại bảng tin
-        </Link>
-      </header>
+    <h1>Quản lý báo cáo</h1>
+
+    <p>
+      Kiểm tra và xử lý các bài viết bị báo cáo.
+    </p>
+  </div>
+
+  <div className="admin-header-right">
+
+    {/* THÔNG TIN ADMIN */}
+    <div className="admin-account-info">
+
+      <div className="admin-account-avatar">
+        🛡️
+      </div>
+
+      <div>
+        <strong>
+          {currentAdmin.fullName}
+        </strong>
+
+        <small>
+          {currentAdmin.email}
+        </small>
+
+        <span className="admin-role-label">
+          ADMIN
+        </span>
+      </div>
+
+    </div>
+
+    {/* CHUYỂN TÀI KHOẢN */}
+    <div className="admin-switch-account">
+
+      <select
+        aria-label="Chọn tài khoản người dùng"
+        value={selectedAccount}
+        onChange={(event) =>
+          setSelectedAccount(event.target.value)
+        }
+      >
+        <option value="">
+          Chọn tài khoản USER
+        </option>
+
+        {getMockUsers().map((account) => (
+          <option
+            key={account.id}
+            value={account.id}
+          >
+            {account.fullName}
+          </option>
+        ))}
+      </select>
+
+      <button
+        type="button"
+        className="admin-switch-button"
+        disabled={!selectedAccount}
+        onClick={handleSwitchAccount}
+      >
+        Chuyển tài khoản
+      </button>
+
+    </div>
+
+    {/* ĐĂNG XUẤT */}
+    <button
+      type="button"
+      className="admin-logout-button"
+      onClick={handleLogout}
+    >
+      🚪 Đăng xuất
+    </button>
+
+  </div>
+
+</header>
+
 
       {/* THỐNG KÊ */}
       <div className="report-statistics">
@@ -541,7 +929,7 @@ function Reports() {
                     </span>
 
                     <h3>
-                      {displayName(report.postAuthor)}
+                      {displayName(report.postAuthor, report.postAuthorId)}
                     </h3>
                   </div>
 
@@ -562,7 +950,7 @@ function Reports() {
 
                   <p>
                     <strong>Người báo cáo:</strong>{" "}
-                    {displayName(report.reporter)}
+                    {displayName(report.reporter, report.reporterId)}
                   </p>
 
                   <p>
@@ -622,6 +1010,17 @@ function Reports() {
                     Thời gian báo cáo:{" "}
                     {formatDate(report.createdAt)}
                   </p>
+                  {report.processedById != null && (
+  <p className="report-date">
+    Người xử lý:{" "}
+    <strong>
+      {displayName(
+        report.processedBy,
+        report.processedById
+      )}
+    </strong>
+  </p>
+)}
 
                   {report.processedAt && (
                     <p className="report-date">
@@ -647,16 +1046,17 @@ function Reports() {
                 {/* CÁC NÚT THAO TÁC */}
                 <div className="report-actions">
 
-                  {postExists && (
-                    <Link
-                      className="view-reported-post"
-                      to={`/feed?postId=${encodeURIComponent(
-                        report.postId
-                      )}`}
-                    >
-                      Xem bài viết
-                    </Link>
-                  )}
+                  <button
+  type="button"
+  className="view-reported-post"
+  onClick={() =>
+    handleViewReportedPost(report)
+  }
+>
+  {postExists
+    ? "Xem bài viết"
+    : "Xem nội dung báo cáo"}
+</button>
 
                   {report.status === "pending" && (
                     <>
@@ -696,6 +1096,7 @@ function Reports() {
                   <button
                     type="button"
                     className="delete-report-button"
+                    disabled={report.status === "pending"}
                     onClick={() =>
                       handleDeleteReport(report.id)
                     }
@@ -710,9 +1111,159 @@ function Reports() {
           })
         )}
 
+      
       </div>
+
+      {/* POPUP CHI TIẾT BÀI VIẾT BỊ BÁO CÁO */}
+      {viewingReport && (
+        <div
+          className="admin-post-overlay"
+          onClick={handleCloseReportedPost}
+        >
+          <section
+            className="admin-post-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="admin-post-title"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+
+            <div className="admin-post-modal-header">
+              <h2 id="admin-post-title">
+                Chi tiết bài viết bị báo cáo
+              </h2>
+
+              <button
+                type="button"
+                aria-label="Đóng"
+                onClick={handleCloseReportedPost}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="admin-post-modal-body">
+
+              <p>
+                <strong>Mã bài viết:</strong>{" "}
+                {viewingReport.postId}
+              </p>
+
+              <p>
+                <strong>Người đăng:</strong>{" "}
+                {displayName(
+                  viewingReport.postAuthor,
+                  viewingReport.postAuthorId
+                )}
+              </p>
+
+              <p>
+                <strong>Người báo cáo:</strong>{" "}
+                {displayName(
+                  viewingReport.reporter,
+                  viewingReport.reporterId
+                )}
+              </p>
+
+              <p>
+                <strong>Lý do:</strong>{" "}
+                {viewingReport.reason}
+              </p>
+
+              {viewingReport.detail && (
+                <p>
+                  <strong>Mô tả bổ sung:</strong>{" "}
+                  {viewingReport.detail}
+                </p>
+              )}
+
+              <p>
+                <strong>Trạng thái báo cáo:</strong>{" "}
+                {getStatusLabel(viewingReport.status)}
+              </p>
+
+              {!viewingPost && (
+                <div className="admin-post-warning">
+                  Bài viết không còn tồn tại.
+                  Đang hiển thị dữ liệu đã lưu
+                  tại thời điểm báo cáo.
+                </div>
+              )}
+
+              {/* NỘI DUNG TẠI THỜI ĐIỂM BÁO CÁO */}
+              <h3>Nội dung khi bị báo cáo</h3>
+
+              <div className="admin-post-content">
+                {viewingReport.postContent ||
+                  "Không có nội dung văn bản."}
+              </div>
+
+              <div className="admin-post-gallery">
+                {getImages(
+                  viewingReport.postImages,
+                  viewingReport.postImage
+                ).map((src, index) => (
+                  <img
+                    key={index}
+                    src={src}
+                    alt={`Ảnh báo cáo ${index + 1}`}
+                  />
+                ))}
+              </div>
+
+              {/* NỘI DUNG HIỆN TẠI */}
+              {viewingPost && (
+                <>
+                  <h3>Nội dung hiện tại</h3>
+
+                  <div className="admin-post-content">
+                    {viewingPost.content ||
+                      "Không có nội dung văn bản."}
+                  </div>
+
+                  <div className="admin-post-gallery">
+                    {getImages(
+                      viewingPost.images,
+                      viewingPost.image
+                    ).map((src, index) => (
+                      <img
+                        key={index}
+                        src={src}
+                        alt={`Ảnh hiện tại ${index + 1}`}
+                      />
+                    ))}
+                  </div>
+
+                  {viewingPost.isShared && (
+                    <p>
+                      <strong>Bài viết chia sẻ từ ID:</strong>{" "}
+                      {viewingPost.originalPost?.id ||
+                        "Không xác định"}
+                    </p>
+                  )}
+                </>
+              )}
+
+            </div>
+
+            <div className="admin-post-modal-footer">
+              <button
+                type="button"
+                onClick={handleCloseReportedPost}
+              >
+                Đóng
+              </button>
+            </div>
+
+          </section>
+        </div>
+      )}
+
     </div>
   );
 }
 
 export default Reports;
+

@@ -2,34 +2,66 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
+import {
+  MOCK_ACCOUNTS,
+  getCurrentAccount,
+  readAccountData,
+  saveAccountData,
+} from "../../utils/mockAccounts";
+
 const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
 
-const defaultProfile = {
-  fullName: "Nguyễn Văn A",
-  email: "nguyenvana@gmail.com",
-  phone: "0987654321",
-  birthday: "2002-05-15",
-  gender: "Nam",
-  address: "Hà Nội, Việt Nam",
-  bio: "Xin chào! Mình đang sử dụng MiniSocial.",
-  avatar: "",
-  cover: "",
-};
-
-// ĐỌC THÔNG TIN CÁ NHÂN
+// ĐỌC THÔNG TIN CÁ NHÂN THEO TÀI KHOẢN
 function readProfile() {
+  const account =
+    getCurrentAccount() || MOCK_ACCOUNTS[0];
+
+  const defaultProfile = {
+    phone: "",
+    birthday: "",
+    address: "",
+    gender: "",
+    bio: "",
+    avatar: "",
+    cover: "",
+    ...account,
+  };
+
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(PROFILE_KEY) || "{}"
+    // GIỮ LẠI THÔNG TIN CŨ CỦA NGUYỄN VĂN A
+    const legacyProfile =
+      account.id === 1
+        ? JSON.parse(
+            localStorage.getItem(PROFILE_KEY) || "{}"
+          )
+        : {};
+
+    const savedProfile = readAccountData(
+      PROFILE_KEY,
+      legacyProfile,
+      account.id
     );
 
-    return {
+    const profile = {
       ...defaultProfile,
-      ...saved,
+      ...savedProfile,
+      id: account.id,
+      username: account.username,
+      email: account.email,
     };
+
+    // CHUYỂN NGÀY SINH CŨ SANG YYYY-MM-DD
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(profile.birthday)) {
+      const [day, month, year] =
+        profile.birthday.split("/");
+
+      profile.birthday = `${year}-${month}-${day}`;
+    }
+
+    return profile;
   } catch {
-    return { ...defaultProfile };
+    return defaultProfile;
   }
 }
 
@@ -110,6 +142,7 @@ function EditProfile() {
   const phone = formData.phone.trim();
 
   const nameRegex = /^[\p{L}\p{M}\s.'’-]+$/u;
+
   const phoneRegex = /^(0\d{9}|\+84\d{9})$/;
 
   // KIỂM TRA HỌ TÊN
@@ -120,11 +153,12 @@ function EditProfile() {
   } else if (fullName.length > 100) {
     newErrors.fullName = "Họ tên tối đa 100 ký tự!";
   } else if (
-    !nameRegex.test(fullName) ||
-    !/\p{L}/u.test(fullName)
-  ) {
-    newErrors.fullName = "Họ tên không được chứa số hoặc ký tự không hợp lệ!";
-  }
+  !nameRegex.test(fullName) ||
+  !/\p{L}/u.test(fullName)
+) {
+  newErrors.fullName =
+    "Họ tên không được chứa số hoặc ký tự không hợp lệ!";
+}
 
   // KIỂM TRA SỐ ĐIỆN THOẠI
   if (phone && !phoneRegex.test(phone)) {
@@ -153,44 +187,75 @@ function EditProfile() {
   return Object.keys(newErrors).length === 0;
 };
 
-  // LƯU THÔNG TIN
-  const handleSubmit = (event) => {
-    event.preventDefault();
+// LƯU THÔNG TIN RIÊNG CHO TỪNG TÀI KHOẢN
+const handleSubmit = (event) => {
+  event.preventDefault();
 
-    if (isLoading) return;
+  if (isLoading) return;
 
-    if (!validate()) return;
+  if (!validate()) return;
 
-    const updatedProfile = {
-      ...formData,
-      fullName: formData.fullName.trim(),
-      phone: formData.phone.trim(),
-      address: formData.address.trim(),
-      bio: formData.bio.trim(),
-      updatedAt: new Date().toISOString(),
-    };
+  const account = getCurrentAccount();
 
-    try {
-      localStorage.setItem(
-        PROFILE_KEY,
-        JSON.stringify(updatedProfile)
-      );
+  // KIỂM TRA PHIÊN ĐĂNG NHẬP
+  if (!account) {
+    alert("Vui lòng đăng nhập lại!");
 
-      window.dispatchEvent(
-        new Event(PROFILE_EVENT)
-      );
+    navigate("/login", {
+      replace: true,
+    });
 
-      alert("Cập nhật thông tin thành công!");
+    return;
+  }
 
-      navigate("/profile");
-    } catch (error) {
-      console.error(error);
+  // KIỂM TRA ĐÚNG TÀI KHOẢN ĐANG CHỈNH SỬA
+  if (String(formData.id) !== String(account.id)) {
+    alert("Tài khoản đã thay đổi. Vui lòng mở lại trang chỉnh sửa!");
 
-      alert(
-        "Không thể lưu thông tin. Bộ nhớ trình duyệt có thể đã đầy!"
-      );
-    }
+    navigate("/profile");
+
+    return;
+  }
+
+  const updatedProfile = {
+    ...formData,
+
+    id: account.id,
+    username: account.username,
+    email: account.email,
+
+    fullName: formData.fullName.trim(),
+    phone: formData.phone.trim(),
+    address: formData.address.trim(),
+    bio: formData.bio.trim(),
+
+    updatedAt: new Date().toISOString(),
   };
+
+  // LƯU HỒ SƠ THEO ID TÀI KHOẢN
+  const success = saveAccountData(
+    PROFILE_KEY,
+    updatedProfile,
+    account.id
+  );
+
+  if (!success) {
+    alert(
+      "Không thể lưu thông tin. Bộ nhớ trình duyệt có thể đã đầy!"
+    );
+
+    return;
+  }
+
+  // ĐỒNG BỘ HEADER, SIDEBAR VÀ PROFILE
+  window.dispatchEvent(
+    new Event(PROFILE_EVENT)
+  );
+
+  alert("Cập nhật thông tin thành công!");
+
+  navigate("/profile");
+};
 
   return (
     <div className="profile-page">
@@ -255,15 +320,23 @@ function EditProfile() {
           <div className="avatar-upload">
             <h3>Ảnh đại diện</h3>
 
-            <div className="profile-avatar">
+            <div
+  className={`profile-avatar ${
+    formData.color || "blue"
+  }`}
+>
               {formData.avatar ? (
                 <img
                   src={formData.avatar}
                   alt="Ảnh đại diện"
                 />
               ) : (
-                formData.fullName.charAt(0).toUpperCase() ||
-                "U"
+                String(formData.fullName || "U")
+  .trim()
+  .split(/\s+/)
+  .pop()
+  ?.charAt(0)
+  .toUpperCase() || "U"
               )}
             </div>
 

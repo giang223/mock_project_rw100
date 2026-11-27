@@ -4,7 +4,14 @@ import {
   Routes,
   Route,
   Navigate,
+  Outlet,
 } from "react-router-dom";
+
+import {
+  getCurrentAccount,
+  isAdmin,
+  isUser,
+} from "./utils/mockAccounts";
 
 import Login from "./Pages/auth/Login.jsx";
 import Register from "./Pages/auth/Register.jsx";
@@ -27,48 +34,284 @@ import BlockedUsers from "./Pages/social/BlockedUsers";
 import Notifications from "./Pages/notification/Notifications";
 import Reports from "./Pages/admin/Reports";
 
-import { Stories, Explore, Messages } from "./Pages/CommunityPages.jsx";
+import {
+  Stories,
+  Explore,
+  Messages,
+} from "./Pages/CommunityPages.jsx";
 
 import UserLayout from "./Components/UserLayout";
 
 import "./App.css";
 
+// ========================================
+// LẤY ĐƯỜNG DẪN THEO VAI TRÒ
+// ========================================
+function getHomePath(account) {
+  if (isAdmin(account)) {
+    return "/admin/reports";
+  }
+
+  if (isUser(account)) {
+    return "/feed";
+  }
+
+  return "/login";
+}
+
+// ========================================
+// BẢO VỆ ROUTE YÊU CẦU ĐĂNG NHẬP
+// ========================================
+function ProtectedRoute() {
+  const account = getCurrentAccount();
+
+  if (!account) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Outlet />;
+}
+
+// ========================================
+// ROUTE DÀNH RIÊNG CHO USER
+// ========================================
+function UserRoute() {
+  const account = getCurrentAccount();
+
+  if (!account) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isUser(account)) {
+    return (
+      <Navigate
+        to={getHomePath(account)}
+        replace
+      />
+    );
+  }
+
+  return <Outlet />;
+}
+
+// ========================================
+// ROUTE DÀNH RIÊNG CHO ADMIN
+// ========================================
+function AdminRoute() {
+  const account = getCurrentAccount();
+
+  if (!account) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdmin(account)) {
+    return (
+      <Navigate
+        to={getHomePath(account)}
+        replace
+      />
+    );
+  }
+
+  return <Outlet />;
+}
+
+// ========================================
+// ROUTE DÀNH CHO NGƯỜI CHƯA ĐĂNG NHẬP
+// ========================================
+function PublicRoute() {
+  const account = getCurrentAccount();
+
+  if (account && (isAdmin(account) || isUser(account))) {
+    return (
+      <Navigate
+        to={getHomePath(account)}
+        replace
+      />
+    );
+  }
+
+  return <Outlet />;
+}
+
+// ========================================
+// ĐIỀU HƯỚNG MẶC ĐỊNH
+// ========================================
+function DefaultRoute() {
+  const account = getCurrentAccount();
+
+  return (
+    <Navigate
+      to={getHomePath(account)}
+      replace
+    />
+  );
+}
+
+// ========================================
+// APP
+// ========================================
 function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* CÁC TRANG AUTH - KHÔNG DÙNG LAYOUT CHUNG */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/verify-email" element={<VerifyEmail />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password" element={<ResetPassword />} />
 
-        {/* CÁC TRANG USER - DÙNG HEADER VÀ SIDEBAR CHUNG */}
-        <Route element={<UserLayout />}>
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/profile/edit" element={<EditProfile />} />
-          <Route path="/change-password" element={<ChangePassword />} />
+        {/* TRANG MẶC ĐỊNH */}
+        <Route
+          path="/"
+          element={<DefaultRoute />}
+        />
 
-          <Route path="/feed" element={<PostFeed />} />
-          <Route path="/saved-posts" element={<SavedPosts />} />
+        {/* ==============================
+            CÁC TRANG CHƯA ĐĂNG NHẬP
+        ============================== */}
+        <Route element={<PublicRoute />}>
 
-          <Route path="/stories" element={<Stories />} />
-          <Route path="/explore" element={<Explore />} />
-          <Route path="/messages" element={<Messages />} />
+          <Route
+            path="/login"
+            element={<Login />}
+          />
 
-          <Route path="/search-users" element={<SearchUsers />} />
-          <Route path="/friend-requests" element={<FriendRequests />} />
-          <Route path="/friend-suggestions" element={<FriendSuggestions />} />
-          <Route path="/blocked-users" element={<BlockedUsers />} />
+          <Route
+            path="/register"
+            element={<Register />}
+          />
 
-          <Route path="/notifications" element={<Notifications />} />
+          <Route
+            path="/verify-email"
+            element={<VerifyEmail />}
+          />
+
+          <Route
+            path="/forgot-password"
+            element={<ForgotPassword />}
+          />
+
+          <Route
+            path="/reset-password"
+            element={<ResetPassword />}
+          />
+
         </Route>
 
-        {/* TRANG ADMIN - GIỮ RIÊNG */}
-        <Route path="/admin/reports" element={<Reports />} />
+        {/* ==============================
+            CÁC TRANG YÊU CẦU ĐĂNG NHẬP
+        ============================== */}
+        <Route element={<ProtectedRoute />}>
 
-        <Route path="*" element={<Navigate to="/login" />} />
+          {/* ============================
+              KHU VỰC USER
+          ============================ */}
+          <Route element={<UserRoute />}>
+
+            {/* HEADER VÀ SIDEBAR CHUNG */}
+            <Route element={<UserLayout />}>
+
+              {/* TRANG CÁ NHÂN */}
+              <Route
+                path="/profile"
+                element={<Profile />}
+              />
+
+              <Route
+                path="/profile/edit"
+                element={<EditProfile />}
+              />
+
+              <Route
+                path="/change-password"
+                element={<ChangePassword />}
+              />
+
+              {/* BÀI VIẾT */}
+              <Route
+                path="/feed"
+                element={<PostFeed />}
+              />
+
+              <Route
+                path="/saved-posts"
+                element={<SavedPosts />}
+              />
+
+              {/* TIN VÀ KHÁM PHÁ */}
+              <Route
+                path="/stories"
+                element={<Stories />}
+              />
+
+              <Route
+                path="/explore"
+                element={<Explore />}
+              />
+
+              {/* TIN NHẮN */}
+              <Route
+                path="/messages"
+                element={<Messages />}
+              />
+
+              {/* BẠN BÈ */}
+              <Route
+                path="/search-users"
+                element={<SearchUsers />}
+              />
+
+              <Route
+                path="/friend-requests"
+                element={<FriendRequests />}
+              />
+
+              <Route
+                path="/friend-suggestions"
+                element={<FriendSuggestions />}
+              />
+
+              <Route
+                path="/blocked-users"
+                element={<BlockedUsers />}
+              />
+
+              {/* THÔNG BÁO */}
+              <Route
+                path="/notifications"
+                element={<Notifications />}
+              />
+
+            </Route>
+
+          </Route>
+
+          {/* ============================
+              KHU VỰC ADMIN
+          ============================ */}
+          <Route element={<AdminRoute />}>
+
+            <Route
+              path="/admin"
+              element={
+                <Navigate
+                  to="/admin/reports"
+                  replace
+                />
+              }
+            />
+
+            <Route
+              path="/admin/reports"
+              element={<Reports />}
+            />
+
+          </Route>
+
+        </Route>
+
+        {/* ĐƯỜNG DẪN KHÔNG TỒN TẠI */}
+        <Route
+          path="*"
+          element={<DefaultRoute />}
+        />
+
       </Routes>
     </BrowserRouter>
   );

@@ -13,30 +13,16 @@ import {
   formatNotificationTime,
 } from "./notificationUtils";
 
+import {
+  ACCOUNT_EVENT,
+  getAccountById,
+  getAccountByName,
+  getCurrentAccount,
+  isUser,
+} from "../../utils/mockAccounts";
+
 const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
-const CURRENT_USER = "Nguyễn Văn A";
-
-// ĐỌC THÔNG TIN CÁ NHÂN
-function readProfile() {
-  const defaultProfile = {
-    fullName: CURRENT_USER,
-    avatar: "",
-  };
-
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem(PROFILE_KEY) || "{}"
-    );
-
-    return {
-      ...defaultProfile,
-      ...saved,
-    };
-  } catch {
-    return defaultProfile;
-  }
-}
 
 // TÌM KIẾM KHÔNG PHÂN BIỆT DẤU
 function normalizeText(value) {
@@ -81,12 +67,20 @@ function getIcon(type) {
 }
 
 // ẢNH ĐẠI DIỆN THÔNG BÁO
-function NotificationAvatar({ avatar, name }) {
+function NotificationAvatar({ avatar, name, color }) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setFailed(false);
   }, [avatar]);
+
+  const colors = {
+    blue: "#1877f2",
+    green: "#16a34a",
+    orange: "#ea9233",
+    purple: "#9063cd",
+    pink: "#d94e88",
+  };
 
   if (avatar && !failed) {
     return (
@@ -99,7 +93,13 @@ function NotificationAvatar({ avatar, name }) {
   }
 
   return (
-    <div className="notification-avatar-fallback">
+    <div
+      className="notification-avatar-fallback"
+      style={{
+        background: colors[color] || "#1877f2",
+        color: "#ffffff",
+      }}
+    >
       {String(name || "U")
         .trim()
         .split(/\s+/)
@@ -115,8 +115,6 @@ function Notifications() {
     getSavedNotifications
   );
 
-  const [profile, setProfile] = useState(readProfile);
-
   const [activeTab, setActiveTab] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [activeType, setActiveType] = useState("all");
@@ -125,100 +123,108 @@ function Notifications() {
 
   const navigate = useNavigate();
 
-  // ĐỒNG BỘ DỮ LIỆU
-  useEffect(() => {
-    const refreshData = () => {
-      setNotifications(getSavedNotifications());
-      setProfile(readProfile());
-    };
+ // ĐỒNG BỘ DỮ LIỆU
+useEffect(() => {
+  const refreshData = () => {
+    setNotifications(getSavedNotifications());
+  };
 
-    const handleStorage = (event) => {
-      if (
-        event.key === STORAGE_KEY ||
-        event.key === PROFILE_KEY ||
-        event.key === null
-      ) {
-        refreshData();
-      }
-    };
+  const handleStorage = (event) => {
+    const key = event.key;
 
-    refreshData();
+    if (
+      key === null ||
+      key === STORAGE_KEY ||
+      key === PROFILE_KEY ||
+      key?.startsWith(`${STORAGE_KEY}_`) ||
+      key?.startsWith(`${PROFILE_KEY}_`)
+    ) {
+      refreshData();
+    }
+  };
 
-    window.addEventListener(
+  refreshData();
+
+  window.addEventListener(
+    UPDATE_EVENT,
+    refreshData
+  );
+
+  window.addEventListener(
+    PROFILE_EVENT,
+    refreshData
+  );
+
+  window.addEventListener(
+    ACCOUNT_EVENT,
+    refreshData
+  );
+
+  window.addEventListener(
+    "storage",
+    handleStorage
+  );
+
+  window.addEventListener(
+    "focus",
+    refreshData
+  );
+
+  // CẬP NHẬT THỜI GIAN MỖI PHÚT
+  const timer = setInterval(() => {
+    setClock((previous) => previous + 1);
+  }, 60000);
+
+  return () => {
+    clearInterval(timer);
+
+    window.removeEventListener(
       UPDATE_EVENT,
       refreshData
     );
 
-    window.addEventListener(
+    window.removeEventListener(
       PROFILE_EVENT,
       refreshData
     );
 
-    window.addEventListener(
+    window.removeEventListener(
+      ACCOUNT_EVENT,
+      refreshData
+    );
+
+    window.removeEventListener(
       "storage",
       handleStorage
     );
 
-    window.addEventListener(
+    window.removeEventListener(
       "focus",
       refreshData
     );
-
-    // CẬP NHẬT THỜI GIAN MỖI PHÚT
-    const timer = setInterval(() => {
-      setClock((previous) => previous + 1);
-    }, 60000);
-
-    return () => {
-      clearInterval(timer);
-
-      window.removeEventListener(
-        UPDATE_EVENT,
-        refreshData
-      );
-
-      window.removeEventListener(
-        PROFILE_EVENT,
-        refreshData
-      );
-
-      window.removeEventListener(
-        "storage",
-        handleStorage
-      );
-
-      window.removeEventListener(
-        "focus",
-        refreshData
-      );
-    };
-  }, []);
-
-  // KIỂM TRA THÔNG BÁO CỦA TÀI KHOẢN HIỆN TẠI
-  const isCurrentUser = (item) => {
-    return (
-      item.isMine === true ||
-      item.name === CURRENT_USER
-    );
   };
+}, []);
 
-  // HIỂN THỊ TÊN
-  const displayName = (item) => {
-    if (isCurrentUser(item)) {
-      return profile.fullName || CURRENT_USER;
-    }
+ // KIỂM TRA NGƯỜI GỬI LÀ TÀI KHOẢN HIỆN TẠI
+const isCurrentUser = (item) => {
+  const account = getCurrentAccount();
 
-    return item.name || "MiniSocial";
-  };
+  return Boolean(
+    account &&
+    item.senderId != null &&
+    String(item.senderId) === String(account.id)
+  );
+};
 
-  // HIỂN THỊ ẢNH ĐẠI DIỆN
-  const getAvatar = (item) => {
-    if (isCurrentUser(item)) {
-      return profile.avatar || "";
-    }
+// HIỂN THỊ TÊN NGƯỜI GỬI
+const displayName = (item) => {
+  return item.name || "MiniSocial";
+};
 
-    return item.avatar || "";
-  };
+// HIỂN THỊ ẢNH ĐẠI DIỆN NGƯỜI GỬI
+const getAvatar = (item) => {
+  return item.avatar || "";
+};
 
   // KIỂM TRA THÔNG BÁO KẾT BẠN
   const isFriendNotification = (item) => {
@@ -339,8 +345,23 @@ if (activeType === "friend") {
     );
   };
 
- // MỞ THÔNG BÁO
+// MỞ THÔNG BÁO
 const handleOpenNotification = (item) => {
+  const account = getCurrentAccount();
+
+  // KIỂM TRA QUYỀN USER
+  if (!item || !isUser(account)) {
+    return;
+  }
+
+  // KIỂM TRA NGƯỜI NHẬN THÔNG BÁO
+  if (
+    item.receiverId != null &&
+    String(item.receiverId) !== String(account.id)
+  ) {
+    return;
+  }
+
   // ĐÁNH DẤU ĐÃ ĐỌC
   if (!item.read) {
     const success = handleMarkRead(item.id);
@@ -348,7 +369,26 @@ const handleOpenNotification = (item) => {
     if (!success) return;
   }
 
-  // KIỂM TRA TƯƠNG TÁC BÀI VIẾT
+  // THÔNG BÁO HỆ THỐNG VÀ BÁO CÁO
+  if (
+    item.type === "system" ||
+    item.type === "report"
+  ) {
+    return;
+  }
+
+  // TÌM TÀI KHOẢN NGƯỜI GỬI
+  const sender =
+    item.senderId != null
+      ? getAccountById(item.senderId)
+      : getAccountByName(item.name);
+
+  // KHÔNG CHUYỂN HƯỚNG ĐẾN ADMIN
+  if (sender && !isUser(sender)) {
+    return;
+  }
+
+  // THÔNG BÁO TƯƠNG TÁC BÀI VIẾT
   const isPostInteraction = [
     "like",
     "comment",
@@ -356,11 +396,9 @@ const handleOpenNotification = (item) => {
   ].includes(item.type);
 
   const hasPostId =
-    item.postId !== null &&
-    item.postId !== undefined &&
+    item.postId != null &&
     item.postId !== "";
 
-  // MỞ CHI TIẾT BÀI VIẾT
   if (isPostInteraction && hasPostId) {
     navigate(
       `/feed?postId=${encodeURIComponent(item.postId)}`
@@ -369,8 +407,17 @@ const handleOpenNotification = (item) => {
     return;
   }
 
-  // THÔNG BÁO HỆ THỐNG
-  if (item.type === "system") {
+  // THÔNG BÁO TIN NHẮN
+  if (item.type === "message") {
+    if (
+      isUser(sender) &&
+      String(sender.id) !== String(account.id)
+    ) {
+      navigate(
+        `/messages?userId=${sender.id}`
+      );
+    }
+
     return;
   }
 
@@ -380,10 +427,23 @@ const handleOpenNotification = (item) => {
     return;
   }
 
-  // MỞ TRANG CÁ NHÂN NGƯỜI KHÁC
+  // MỞ TRANG CÁ NHÂN NGƯỜI GỬI
+  if (isUser(sender)) {
+    navigate(
+      `/profile?userId=${sender.id}`
+    );
+
+    return;
+  }
+
+  // HỖ TRỢ DỮ LIỆU CŨ CHƯA CÓ ID
   const name = String(item.name || "").trim();
 
-  if (name && name !== "MiniSocial") {
+  if (
+    item.senderId == null &&
+    name &&
+    name !== "MiniSocial"
+  ) {
     navigate(
       `/profile?user=${encodeURIComponent(name)}`
     );
@@ -591,9 +651,10 @@ const handleOpenNotification = (item) => {
                 <div className="notification-avatar">
 
                   <NotificationAvatar
-                    avatar={getAvatar(item)}
-                    name={displayName(item)}
-                  />
+  avatar={getAvatar(item)}
+  name={displayName(item)}
+  color={item.color}
+/>
 
                   <span className="notification-type-icon">
                     {getIcon(item.type)}

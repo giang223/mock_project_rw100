@@ -1,68 +1,22 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { addNotification } from "../notification/notificationUtils";
+import {
+  ACCOUNT_EVENT,
+} from "../../utils/mockAccounts";
 
-const STORAGE_KEY = "miniSocialFriendRequests";
-const BLOCKED_KEY = "miniSocialBlockedUsers";
+import {
+  FRIEND_EVENT,
+  BLOCKED_EVENT,
+  getMyFriendRequests,
+  acceptFriendRequest,
+  rejectFriendRequest,
+  cancelFriendRequest,
+  unfriendUser,
+} from "../../utils/friendUtils";
 
-const REQUEST_EVENT = "miniSocialFriendRequestsUpdated";
-const BLOCKED_EVENT = "miniSocialBlockedUsersUpdated";
-
-// DỮ LIỆU LỜI MỜI MẪU
-const initialRequests = [
-  {
-    id: 1,
-    name: "Trần Thị Bình",
-    username: "tranthibinh",
-    avatar: "B",
-    mutualFriends: 3,
-    status: "received",
-  },
-  {
-    id: 2,
-    name: "Lê Minh Hoàng",
-    username: "leminhhoang",
-    avatar: "H",
-    mutualFriends: 5,
-    status: "received",
-  },
-  {
-    id: 3,
-    name: "Phạm Thu Hà",
-    username: "phamthuha",
-    avatar: "H",
-    mutualFriends: 2,
-    status: "sent",
-  },
-];
-
-// ĐỌC DỮ LIỆU LOCALSTORAGE
-function readStorage(key, fallback = []) {
-  try {
-    const data = localStorage.getItem(key);
-
-    if (data === null) return fallback;
-
-    const parsed = JSON.parse(data);
-
-    return Array.isArray(parsed)
-      ? parsed.filter(
-          (item) =>
-            item &&
-            typeof item === "object" &&
-            !Array.isArray(item)
-        )
-      : fallback;
-  } catch (error) {
-    console.error("Không thể đọc dữ liệu:", error);
-    return fallback;
-  }
-}
-// ĐỌC DANH SÁCH LỜI MỜI
-function readRequests() {
-  return readStorage(STORAGE_KEY, initialRequests);
-}
+const PROFILE_EVENT =
+  "miniSocialProfileUpdated";
 
 // CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
 function normalizeText(value) {
@@ -74,38 +28,9 @@ function normalizeText(value) {
     .trim();
 }
 
-// SO SÁNH NGƯỜI DÙNG
-function isSameUser(first, second) {
-  if (!first || !second) return false;
-
-  if (first.username && second.username) {
-    return (
-      normalizeText(first.username) ===
-      normalizeText(second.username)
-    );
-  }
-
-  return (
-    Boolean(first.name && second.name) &&
-    normalizeText(first.name) ===
-      normalizeText(second.name)
-  );
-}
-
-// KIỂM TRA NGƯỜI DÙNG ĐÃ CHẶN
-function isBlockedUser(user, blockedUsers) {
-  return blockedUsers.some(
-    (item) => isSameUser(item, user)
-  );
-}
-
 function FriendRequests() {
   const [requests, setRequests] = useState(
-    readRequests
-  );
-
-  const [blockedUsers, setBlockedUsers] = useState(
-    () => readStorage(BLOCKED_KEY)
+    getMyFriendRequests
   );
 
   const [activeTab, setActiveTab] =
@@ -114,105 +39,43 @@ function FriendRequests() {
   const [searchValue, setSearchValue] =
     useState("");
 
-  // ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
+  // ĐỒNG BỘ DỮ LIỆU
   useEffect(() => {
     const refreshData = () => {
-      setRequests(readRequests());
-      setBlockedUsers(readStorage(BLOCKED_KEY));
+      setRequests(getMyFriendRequests());
     };
-
-    // CHỈ TẠO DỮ LIỆU MẪU KHI CHƯA CÓ DỮ LIỆU
-    try {
-      if (localStorage.getItem(STORAGE_KEY) === null) {
-        localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify(initialRequests)
-        );
-
-        window.dispatchEvent(
-          new Event(REQUEST_EVENT)
-        );
-      }
-    } catch (error) {
-      console.error("Không thể khởi tạo dữ liệu:", error);
-    }
 
     refreshData();
 
-    window.addEventListener(
-      REQUEST_EVENT,
-      refreshData
-    );
-
-    window.addEventListener(
+    const events = [
+      FRIEND_EVENT,
       BLOCKED_EVENT,
-      refreshData
-    );
-
-    window.addEventListener(
+      ACCOUNT_EVENT,
+      PROFILE_EVENT,
       "storage",
-      refreshData
-    );
-
-    window.addEventListener(
       "focus",
-      refreshData
-    );
+    ];
+
+    events.forEach((event) => {
+      window.addEventListener(
+        event,
+        refreshData
+      );
+    });
 
     return () => {
-      window.removeEventListener(
-        REQUEST_EVENT,
-        refreshData
-      );
-
-      window.removeEventListener(
-        BLOCKED_EVENT,
-        refreshData
-      );
-
-      window.removeEventListener(
-        "storage",
-        refreshData
-      );
-
-      window.removeEventListener(
-        "focus",
-        refreshData
-      );
+      events.forEach((event) => {
+        window.removeEventListener(
+          event,
+          refreshData
+        );
+      });
     };
   }, []);
 
-  // LƯU VÀ ĐỒNG BỘ LỜI MỜI
-  const saveRequests = (nextRequests) => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(nextRequests)
-      );
-
-      setRequests(nextRequests);
-
-      window.dispatchEvent(
-        new Event(REQUEST_EVENT)
-      );
-
-      return true;
-    } catch (error) {
-      console.error("Không thể lưu dữ liệu:", error);
-
-      alert(
-        "Không thể lưu dữ liệu. Vui lòng thử lại!"
-      );
-
-      return false;
-    }
-  };
-
   // CHẤP NHẬN LỜI MỜI
   const handleAccept = (id) => {
-    const currentRequests = readRequests();
-
-    const request = currentRequests.find(
+    const request = getMyFriendRequests().find(
       (item) =>
         item.id === id &&
         item.status === "received"
@@ -220,54 +83,18 @@ function FriendRequests() {
 
     if (!request) return;
 
-    const currentBlocked = readStorage(BLOCKED_KEY);
-
-    if (isBlockedUser(request, currentBlocked)) {
+    if (acceptFriendRequest(id)) {
       alert(
-        "Bạn đang chặn người dùng này. Hãy bỏ chặn trước."
+        `Bạn và ${request.name} đã trở thành bạn bè!`
       );
-
-      return;
+    } else {
+      alert("Không thể chấp nhận lời mời!");
     }
-
-    const updated = currentRequests
-      .filter(
-        (item) =>
-          item.id === id ||
-          !isSameUser(item, request)
-      )
-      .map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              status: "accepted",
-              acceptedAt: new Date().toISOString(),
-            }
-          : item
-      );
-
-    if (saveRequests(updated)) {
-  addNotification({
-    type: "friend_accept",
-    name: request.name,
-    username: request.username,
-    avatar: request.avatar || "",
-    isMine: false,
-    message:
-      `Bạn và ${request.name} hiện đã trở thành bạn bè.`,
-  });
-
-  alert(
-    `Bạn và ${request.name} đã trở thành bạn bè!`
-  );
-}
-};
+  };
 
   // TỪ CHỐI LỜI MỜI
   const handleReject = (id) => {
-    const currentRequests = readRequests();
-
-    const request = currentRequests.find(
+    const request = getMyFriendRequests().find(
       (item) =>
         item.id === id &&
         item.status === "received"
@@ -281,26 +108,18 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    const updated = currentRequests.filter(
-      (item) =>
-        !(
-          isSameUser(item, request) &&
-          item.status === "received"
-        )
-    );
-
-    if (saveRequests(updated)) {
+    if (rejectFriendRequest(id)) {
       alert(
         `Đã từ chối lời mời của ${request.name}.`
       );
+    } else {
+      alert("Không thể từ chối lời mời!");
     }
   };
 
   // HỦY LỜI MỜI ĐÃ GỬI
   const handleCancel = (id) => {
-    const currentRequests = readRequests();
-
-    const request = currentRequests.find(
+    const request = getMyFriendRequests().find(
       (item) =>
         item.id === id &&
         item.status === "sent"
@@ -314,26 +133,18 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    const updated = currentRequests.filter(
-      (item) =>
-        !(
-          isSameUser(item, request) &&
-          item.status === "sent"
-        )
-    );
-
-    if (saveRequests(updated)) {
+    if (cancelFriendRequest(id)) {
       alert(
         `Đã hủy lời mời gửi đến ${request.name}.`
       );
+    } else {
+      alert("Không thể hủy lời mời!");
     }
   };
 
   // HỦY KẾT BẠN
   const handleUnfriend = (id) => {
-    const currentRequests = readRequests();
-
-    const request = currentRequests.find(
+    const request = getMyFriendRequests().find(
       (item) =>
         item.id === id &&
         item.status === "accepted"
@@ -347,24 +158,17 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    const updated = currentRequests.filter(
-      (item) => !isSameUser(item, request)
-    );
-
-    if (saveRequests(updated)) {
+    if (unfriendUser(id)) {
       alert(
         `Đã hủy kết bạn với ${request.name}.`
       );
+    } else {
+      alert("Không thể hủy kết bạn!");
     }
   };
 
-  // LOẠI BỎ NGƯỜI DÙNG ĐÃ CHẶN
-  const visibleRequests = useMemo(() => {
-    return requests.filter(
-      (item) =>
-        !isBlockedUser(item, blockedUsers)
-    );
-  }, [requests, blockedUsers]);
+  // DANH SÁCH ĐÃ LỌC NGƯỜI BỊ CHẶN
+  const visibleRequests = requests;
 
   // LỜI MỜI ĐÃ NHẬN
   const receivedRequests = useMemo(() => {
@@ -599,9 +403,7 @@ function FriendRequests() {
             <div className="friend-request-list">
               {displayedRequests.map((request) => {
                 const profileUrl =
-                  `/profile?user=${encodeURIComponent(
-                    request.name || ""
-                  )}`;
+  `/profile?userId=${request.userId}`;
 
                 return (
                   <div
@@ -610,13 +412,26 @@ function FriendRequests() {
                   >
                     {/* AVATAR */}
                     <Link
-                      className="friend-request-avatar"
+                      className={`friend-request-avatar ${
+  request.color || "blue"
+}`}
                       to={profileUrl}
                       aria-label={`Xem hồ sơ ${request.name}`}
                     >
-                      {request.avatar ||
-                        request.name?.charAt(0) ||
-                        "U"}
+                      {request.avatar ? (
+  <img
+    src={request.avatar}
+    alt={`Ảnh đại diện ${request.name}`}
+    className="synced-avatar-image"
+  />
+) : (
+  String(request.name || "U")
+    .trim()
+    .split(/\s+/)
+    .pop()
+    ?.charAt(0)
+    .toUpperCase() || "U"
+)}
                     </Link>
 
                     {/* THÔNG TIN */}

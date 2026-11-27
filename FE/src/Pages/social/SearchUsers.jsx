@@ -1,445 +1,455 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom"; 
-import { addNotification } from "../notification/notificationUtils";
+import {
+  ACCOUNT_EVENT,
+  getCurrentAccount,
+  readAccountData,
+  saveAccountData,
+  getMockUsers,
+  getAccountById,
+  isUser,
+} from "../../utils/mockAccounts";
 
-const REQUESTS_KEY = "miniSocialFriendRequests";
-const BLOCKED_KEY = "miniSocialBlockedUsers";
+import {
+  FRIEND_EVENT,
+  BLOCKED_KEY,
+  BLOCKED_EVENT,
+  getFriendProfile,
+  getFriendStatus,
+  getMutualFriends,
+  getRelationship,
+  sendFriendRequest,
+  cancelFriendRequest,
+  unfriendUser,
+  removeRelationshipWith,
+  isBlockedBetween,
+} from "../../utils/friendUtils";
 
-const users = [
-  {
-    id: 1,
-    name: "Nguyễn Văn An",
-    username: "nguyenvanan",
-    bio: "Yêu thích công nghệ và lập trình.",
-    mutualFriends: 5,
-    avatar: "A",
-    color: "blue",
-  },
-  {
-    id: 2,
-    name: "Trần Thị Bình",
-    username: "tranthibinh",
-    bio: "Thích đọc sách, du lịch và khám phá.",
-    mutualFriends: 3,
-    avatar: "B",
-    color: "pink",
-  },
-  {
-    id: 3,
-    name: "Lê Minh Hoàng",
-    username: "leminhhoang",
-    bio: "Sinh viên Công nghệ thông tin.",
-    mutualFriends: 8,
-    avatar: "H",
-    color: "orange",
-  },
-  {
-    id: 4,
-    name: "Phạm Thu Hà",
-    username: "phamthuha",
-    bio: "Chia sẻ những điều tích cực mỗi ngày.",
-    mutualFriends: 2,
-    avatar: "H",
-    color: "purple",
-  },
-  {
-    id: 5,
-    name: "Nguyễn Minh Anh",
-    username: "nguyenminhanh",
-    bio: "Kết nối và học hỏi cùng mọi người.",
-    mutualFriends: 4,
-    avatar: "M",
-    color: "green",
-  },
-];
+const PROFILE_EVENT = "miniSocialProfileUpdated";
 
-function readStorage(key) {
-  try {
-    const data = localStorage.getItem(key);
-    if (!data) return [];
-
-    const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error("Không thể đọc dữ liệu:", error);
-    return [];
-  }
-}
-
-function SearchUsers() {
-  
-  const [searchParams] = useSearchParams();
-  const [keyword, setKeyword] = useState(searchParams.get("q") || "");
-
-  useEffect(() => {
-    const query = searchParams.get("q") || "";
-    setKeyword(query);
-  }, [searchParams]);
-  const [selectedUser, setSelectedUser] = useState(null);
-
-  const [requests, setRequests] = useState(() =>
-    readStorage(REQUESTS_KEY)
-  );
-
-  const [blockedUsers, setBlockedUsers] = useState(() =>
-    readStorage(BLOCKED_KEY)
-  );
-
-  
-
-// LƯU DỮ LIỆU KẾT BẠN
-const saveRequests = (nextRequests) => {
-  try {
-    localStorage.setItem(
-      REQUESTS_KEY,
-      JSON.stringify(nextRequests)
-    );
-
-    setRequests(nextRequests);
-
-    window.dispatchEvent(
-      new Event("miniSocialFriendRequestsUpdated")
-    );
-
-    return true;
-  } catch (error) {
-    console.error(error);
-    alert("Không thể cập nhật lời mời kết bạn!");
-    return false;
-  }
-};
-
-// LƯU DANH SÁCH CHẶN
-const saveBlockedUsers = (nextBlockedUsers) => {
-  try {
-    localStorage.setItem(
-      BLOCKED_KEY,
-      JSON.stringify(nextBlockedUsers)
-    );
-
-    setBlockedUsers(nextBlockedUsers);
-
-    window.dispatchEvent(
-      new Event("miniSocialBlockedUsersUpdated")
-    );
-
-    return true;
-  } catch (error) {
-    console.error(error);
-    alert("Không thể cập nhật danh sách chặn!");
-    return false;
-  }
-};
-
-// ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
-useEffect(() => {
-  const refreshData = () => {
-    setRequests(readStorage(REQUESTS_KEY));
-    setBlockedUsers(readStorage(BLOCKED_KEY));
-  };
-
-  window.addEventListener(
-    "miniSocialFriendRequestsUpdated",
-    refreshData
-  );
-
-  window.addEventListener(
-    "miniSocialBlockedUsersUpdated",
-    refreshData
-  );
-
-  window.addEventListener("storage", refreshData);
-  window.addEventListener("focus", refreshData);
-
-  return () => {
-    window.removeEventListener(
-      "miniSocialFriendRequestsUpdated",
-      refreshData
-    );
-
-    window.removeEventListener(
-      "miniSocialBlockedUsersUpdated",
-      refreshData
-    );
-
-    window.removeEventListener(
-      "storage",
-      refreshData
-    );
-
-    window.removeEventListener(
-      "focus",
-      refreshData
-    );
-  };
-}, []);
-
- // CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
-const normalizeText = (value) => {
+// TÌM KIẾM KHÔNG PHÂN BIỆT DẤU
+function normalizeText(value) {
   return String(value || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/gi, "d")
     .toLowerCase()
     .trim();
-};
+}
 
-// TÌM KIẾM NGƯỜI DÙNG
-const filteredUsers = useMemo(() => {
-  const searchValue = normalizeText(keyword);
+// ĐỌC DANH SÁCH CHẶN CỦA TÀI KHOẢN
+function readBlockedUsers() {
+  const account = getCurrentAccount();
 
-  return users.filter((user) =>
-    normalizeText(
-      `${user.name} ${user.username} ${user.bio}`
-    ).includes(searchValue)
+  if (!isUser(account)) return [];
+
+  const data = readAccountData(
+    BLOCKED_KEY,
+    [],
+    account.id
   );
-}, [keyword]);
 
-  
-// SO SÁNH NGƯỜI DÙNG
-const isSameUser = (item, user) => {
+  return Array.isArray(data)
+    ? data.filter(Boolean)
+    : [];
+}
+
+// KIỂM TRA NGƯỜI DÙNG TRONG DANH SÁCH CHẶN
+function isSameBlockedUser(item, user) {
   if (!item || !user) return false;
 
-  if (item.username && user.username) {
-    return item.username === user.username;
+  if (item.userId != null) {
+    return String(item.userId) === String(user.id);
   }
 
-  return Boolean(item.name && user.name) &&
-    normalizeText(item.name) ===
-      normalizeText(user.name);
-};
+  return item.username === user.username;
+}
 
-// KIỂM TRA TRẠNG THÁI KẾT BẠN
-const getFriendStatus = (username) => {
-  const user = users.find(
-    (item) => item.username === username
+// ĐỌC DANH SÁCH NGƯỜI DÙNG
+function readUsers() {
+  const account = getCurrentAccount();
+
+  if (!isUser(account)) return [];
+
+  const blockedUsers = readBlockedUsers();
+
+  return getMockUsers()
+    .filter(
+      (user) =>
+        String(user.id) !== String(account.id)
+    )
+    .map((user) => {
+      const profile = getFriendProfile(user.id);
+
+      if (!profile) return null;
+
+      const blocked = blockedUsers.some(
+        (item) => isSameBlockedUser(item, user)
+      );
+
+      // KHÔNG HIỂN THỊ NGƯỜI ĐÃ CHẶN MÌNH
+      if (
+        !blocked &&
+        isBlockedBetween(account.id, user.id)
+      ) {
+        return null;
+      }
+
+      return {
+        id: user.id,
+        name: profile.fullName,
+        username: profile.username,
+        avatar: profile.avatar || "",
+        bio: profile.bio || "",
+        color: profile.color || "blue",
+
+        status: getFriendStatus(user.id),
+
+        blocked,
+
+        mutualFriends: getMutualFriends(
+          account.id,
+          user.id
+        ),
+      };
+    })
+    .filter(Boolean);
+}
+
+function SearchUsers() {
+  const [searchParams] = useSearchParams();
+
+  const [keyword, setKeyword] = useState(
+    searchParams.get("q") || ""
   );
 
-  const request = requests.find(
-    (item) => isSameUser(item, user)
-  );
+  const [users, setUsers] =
+    useState(readUsers);
 
-  return request?.status || "none";
-};
+  // ĐỒNG BỘ TỪ KHÓA TÌM KIẾM TRÊN HEADER
+  useEffect(() => {
+    const query = searchParams.get("q") || "";
 
-// KIỂM TRA NGƯỜI DÙNG ĐÃ BỊ CHẶN
-const isBlocked = (username) => {
-  const user = users.find(
-    (item) => item.username === username
-  );
+    setKeyword(query);
+  }, [searchParams]);
 
-  return blockedUsers.some(
-    (item) => isSameUser(item, user)
-  );
+  // ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
+  useEffect(() => {
+    const refreshData = () => {
+      const nextUsers = readUsers();
+
+      setUsers(nextUsers);
+    };
+
+    refreshData();
+
+    const events = [
+      FRIEND_EVENT,
+      BLOCKED_EVENT,
+      ACCOUNT_EVENT,
+      PROFILE_EVENT,
+      "storage",
+      "focus",
+    ];
+
+    events.forEach((event) => {
+      window.addEventListener(
+        event,
+        refreshData
+      );
+    });
+
+    return () => {
+      events.forEach((event) => {
+        window.removeEventListener(
+          event,
+          refreshData
+        );
+      });
+    };
+  }, []);
+
+  // TÌM KIẾM NGƯỜI DÙNG
+  const filteredUsers = useMemo(() => {
+    const searchValue = normalizeText(keyword);
+
+    return users.filter((user) =>
+      normalizeText(
+        `${user.name} ${user.username} ${user.bio}`
+      ).includes(searchValue)
+    );
+  }, [users, keyword]);
+
+  // HIỂN THỊ AVATAR
+  const renderAvatar = (user) => {
+    if (user.avatar) {
+      return (
+        <img
+          src={user.avatar}
+          alt={`Ảnh đại diện ${user.name}`}
+          className="synced-avatar-image"
+        />
+      );
+    }
+
+    return (
+      String(user.name || "U")
+        .trim()
+        .split(/\s+/)
+        .pop()
+        ?.charAt(0)
+        .toUpperCase() || "U"
+    );
+  };
+
+  // KIỂM TRA QUYỀN TƯƠNG TÁC
+const canInteractWithUser = (user) => {
+  const account = getCurrentAccount();
+
+  if (!isUser(account)) {
+    alert("Bạn không có quyền thực hiện chức năng này!");
+    return false;
+  }
+
+  const target = getAccountById(user?.id);
+
+  if (!isUser(target)) {
+    alert("Tài khoản người dùng không hợp lệ!");
+    setUsers(readUsers());
+    return false;
+  }
+
+  if (String(account.id) === String(target.id)) {
+    return false;
+  }
+
+  return true;
 };
 
   // GỬI LỜI MỜI KẾT BẠN
-const handleSendRequest = (user) => {
-  const currentRequests = readStorage(REQUESTS_KEY);
-  const currentBlocked = readStorage(BLOCKED_KEY);
+  const handleSendRequest = (user) => {
+  if (!canInteractWithUser(user)) return;
 
-  if (
-    currentBlocked.some(
-      (item) => isSameUser(item, user)
-    )
-  ) {
-    alert("Bạn cần bỏ chặn người dùng này trước!");
-    return;
-  }
+  const status = getFriendStatus(user.id);
 
-  const existingRequest = currentRequests.find(
-    (item) => isSameUser(item, user)
-  );
+    if (status === "blocked") {
+      alert("Không thể kết bạn với người dùng này!");
+      return;
+    }
 
-  if (existingRequest?.status === "sent") {
-    alert("Bạn đã gửi lời mời cho người này rồi!");
-    return;
-  }
+    if (status !== "none") {
+      alert(
+        "Đã tồn tại lời mời hoặc quan hệ bạn bè!"
+      );
 
-  if (existingRequest?.status === "received") {
-    alert("Người này đã gửi lời mời cho bạn!");
-    return;
-  }
+      setUsers(readUsers());
+      return;
+    }
 
-  if (existingRequest?.status === "accepted") {
-    alert("Hai người đã là bạn bè!");
-    return;
-  }
+    if (sendFriendRequest(user.id)) {
+      setUsers(readUsers());
 
-  const newRequest = {
-    id: Date.now(),
-    name: user.name,
-    username: user.username,
-    avatar: user.avatar,
-    color: user.color,
-    mutualFriends: user.mutualFriends,
-    status: "sent",
-    createdAt: new Date().toISOString(),
+      alert(
+        `Đã gửi lời mời kết bạn đến ${user.name}.`
+      );
+    } else {
+      alert("Không thể gửi lời mời kết bạn!");
+    }
   };
 
-  const nextRequests = [
-    ...currentRequests.filter(
-      (item) => !isSameUser(item, user)
-    ),
-    newRequest,
-  ];
+  // HỦY LỜI MỜI KẾT BẠN
+  const handleCancelRequest = (user) => {
+    const account = getCurrentAccount();
 
-  if (!saveRequests(nextRequests)) return;
+    if (!canInteractWithUser(user)) return;
 
-  addNotification({
-     type: "friend_request",
-  name: user.name,
-  username: user.username,
-  avatar: user.avatar || "",
-  isMine: false,
-  message: `Bạn đã gửi lời mời kết bạn cho ${user.name}.`,
-  });
+    const relationship = getRelationship(
+      account.id,
+      user.id
+    );
 
-  alert(`Đã gửi lời mời kết bạn đến ${user.name}.`);
-};
+    if (
+      !relationship ||
+      relationship.status !== "pending" ||
+      String(relationship.senderId) !==
+        String(account.id)
+    ) {
+      alert("Lời mời không còn tồn tại!");
+      setUsers(readUsers());
+      return;
+    }
 
-// HỦY LỜI MỜI KẾT BẠN
-const handleCancelRequest = (user) => {
-  const confirmed = window.confirm(
-    `Bạn có muốn hủy lời mời kết bạn với ${user.name}?`
-  );
+    const confirmed = window.confirm(
+      `Bạn có muốn hủy lời mời kết bạn với ${user.name}?`
+    );
 
-  if (!confirmed) return;
+    if (!confirmed) return;
 
-  const nextRequests = readStorage(
-    REQUESTS_KEY
-  ).filter(
-    (item) =>
-      !(
-        isSameUser(item, user) &&
-        item.status === "sent"
-      )
-  );
+    if (cancelFriendRequest(relationship.id)) {
+      setUsers(readUsers());
 
-  if (saveRequests(nextRequests)) {
-    alert("Đã hủy lời mời kết bạn.");
-  }
-};
-
-// HỦY KẾT BẠN
-const handleUnfriend = (user) => {
-  const confirmed = window.confirm(
-    `Bạn có chắc chắn muốn hủy kết bạn với ${user.name}?`
-  );
-
-  if (!confirmed) return;
-
-  const nextRequests = readStorage(
-    REQUESTS_KEY
-  ).filter(
-    (item) =>
-      !(
-        isSameUser(item, user) &&
-        item.status === "accepted"
-      )
-  );
-
-  if (saveRequests(nextRequests)) {
-    alert(`Đã hủy kết bạn với ${user.name}.`);
-  }
-};
-
-// CHẶN NGƯỜI DÙNG
-const handleBlockUser = (user) => {
-  const currentBlocked = readStorage(BLOCKED_KEY);
-  const currentRequests = readStorage(REQUESTS_KEY);
-
-  if (
-    currentBlocked.some(
-      (item) => isSameUser(item, user)
-    )
-  ) {
-    alert("Người dùng này đã bị chặn!");
-    return;
-  }
-
-  const confirmed = window.confirm(
-    `Bạn có chắc chắn muốn chặn ${user.name}?`
-  );
-
-  if (!confirmed) return;
-
-  const newBlockedUser = {
-    id: user.id,
-    name: user.name,
-    username: user.username,
-    avatar: user.avatar,
-    bio: user.bio,
-    color: user.color,
-    blockedAt: new Date().toLocaleDateString("vi-VN"),
+      alert("Đã hủy lời mời kết bạn.");
+    } else {
+      alert("Không thể hủy lời mời!");
+    }
   };
 
-  const nextBlockedUsers = [
-    ...currentBlocked,
-    newBlockedUser,
-  ];
+  // HỦY KẾT BẠN
+  const handleUnfriend = (user) => {
+    const account = getCurrentAccount();
 
-  const nextRequests = currentRequests.filter(
-    (item) => !isSameUser(item, user)
-  );
+    if (!canInteractWithUser(user)) return;
 
-  try {
-    // LƯU CẢ HAI DANH SÁCH TRƯỚC KHI PHÁT SỰ KIỆN
-    localStorage.setItem(
+    const relationship = getRelationship(
+      account.id,
+      user.id
+    );
+
+    if (
+      !relationship ||
+      relationship.status !== "accepted"
+    ) {
+      alert("Hai người chưa phải là bạn bè!");
+      setUsers(readUsers());
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Bạn có chắc chắn muốn hủy kết bạn với ${user.name}?`
+    );
+
+    if (!confirmed) return;
+
+    if (unfriendUser(relationship.id)) {
+      setUsers(readUsers());
+
+      alert(
+        `Đã hủy kết bạn với ${user.name}.`
+      );
+    } else {
+      alert("Không thể hủy kết bạn!");
+    }
+  };
+
+  // CHẶN NGƯỜI DÙNG
+  const handleBlockUser = (user) => {
+    const account = getCurrentAccount();
+
+    if (!canInteractWithUser(user)) return;
+
+    if (String(account.id) === String(user.id)) {
+      return;
+    }
+
+    const currentBlocked = readBlockedUsers();
+
+    const alreadyBlocked = currentBlocked.some(
+      (item) => isSameBlockedUser(item, user)
+    );
+
+    if (alreadyBlocked) {
+      alert("Người dùng này đã bị chặn!");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Bạn có chắc chắn muốn chặn ${user.name}?\nQuan hệ bạn bè và lời mời kết bạn hiện tại sẽ bị xóa.`
+    );
+
+    if (!confirmed) return;
+
+    const newBlockedUser = {
+      id: user.id,
+      userId: user.id,
+      name: user.name,
+      username: user.username,
+      avatar: user.avatar || "",
+      bio: user.bio || "",
+      color: user.color || "blue",
+      blockedAt: new Date().toISOString(),
+    };
+
+    const nextBlockedUsers = [
+      ...currentBlocked,
+      newBlockedUser,
+    ];
+
+    const success = saveAccountData(
       BLOCKED_KEY,
-      JSON.stringify(nextBlockedUsers)
+      nextBlockedUsers,
+      account.id
     );
 
-    localStorage.setItem(
-      REQUESTS_KEY,
-      JSON.stringify(nextRequests)
-    );
+    if (!success) {
+      alert("Không thể lưu danh sách chặn!");
+      return;
+    }
 
-    setBlockedUsers(nextBlockedUsers);
-    setRequests(nextRequests);
+    // XÓA QUAN HỆ BẠN BÈ HOẶC LỜI MỜI
+    const removed = removeRelationshipWith(
+      user.id
+    );
 
     window.dispatchEvent(
-      new Event("miniSocialBlockedUsersUpdated")
+      new Event(BLOCKED_EVENT)
     );
 
-    window.dispatchEvent(
-      new Event("miniSocialFriendRequestsUpdated")
-    );
+    setUsers(readUsers());
 
-    setSelectedUser(null);
+    if (!removed) {
+      alert(
+        "Đã chặn người dùng nhưng chưa xóa được quan hệ bạn bè!"
+      );
+      return;
+    }
 
     alert(`Đã chặn ${user.name}.`);
-  } catch (error) {
-    console.error(error);
+  };
 
-    setBlockedUsers(readStorage(BLOCKED_KEY));
-    setRequests(readStorage(REQUESTS_KEY));
+  // BỎ CHẶN NGƯỜI DÙNG
+  const handleUnblockUser = (user) => {
+    const account = getCurrentAccount();
 
-    alert(
-      "Không thể hoàn tất thao tác chặn. Vui lòng kiểm tra lại!"
+    if (!canInteractWithUser(user)) return;
+
+    const confirmed = window.confirm(
+      `Bạn có chắc chắn muốn bỏ chặn ${user.name}?`
     );
-  }
-};
 
-// BỎ CHẶN NGƯỜI DÙNG
-const handleUnblockUser = (user) => {
-  const confirmed = window.confirm(
-    `Bạn có chắc chắn muốn bỏ chặn ${user.name}?`
-  );
+    if (!confirmed) return;
 
-  if (!confirmed) return;
+    // ĐẢM BẢO QUAN HỆ CŨ ĐÃ ĐƯỢC XÓA
+    if (!removeRelationshipWith(user.id)) {
+      alert("Không thể cập nhật quan hệ bạn bè!");
+      return;
+    }
 
-  const nextBlockedUsers = readStorage(
-    BLOCKED_KEY
-  ).filter(
-    (item) => !isSameUser(item, user)
-  );
+    const nextBlockedUsers =
+      readBlockedUsers().filter(
+        (item) => !isSameBlockedUser(item, user)
+      );
 
-  if (saveBlockedUsers(nextBlockedUsers)) {
+    const success = saveAccountData(
+      BLOCKED_KEY,
+      nextBlockedUsers,
+      account.id
+    );
+
+    if (!success) {
+      alert("Không thể bỏ chặn người dùng!");
+      return;
+    }
+
+    window.dispatchEvent(
+      new Event(BLOCKED_EVENT)
+    );
+
+    setUsers(readUsers());
+
     alert(`Đã bỏ chặn ${user.name}.`);
-  }
-};
+  };
+
   return (
     <div className="search-users-page">
       <header className="search-users-header">
@@ -490,10 +500,7 @@ const handleUnblockUser = (user) => {
             type="text"
             placeholder="Nhập tên hoặc tên tài khoản..."
             value={keyword}
-            onChange={(e) => {
-              setKeyword(e.target.value);
-              setSelectedUser(null);
-            }}
+           onChange={(e) => setKeyword(e.target.value)}
           />
 
           {keyword && (
@@ -529,22 +536,28 @@ const handleUnblockUser = (user) => {
           ) : (
             <div className="search-user-list">
               {filteredUsers.map((user) => {
-                const status = getFriendStatus(user.username);
-                const blocked = isBlocked(user.username);
+                const status = user.status;
+                const blocked = user.blocked;
 
                 return (
                   <div
                     className="search-user-card"
                     key={user.id}
                   >
-                    <div
-                      className={`search-user-avatar ${user.color}`}
-                    >
-                      {user.avatar}
-                    </div>
+                    <Link
+  to={`/profile?userId=${user.id}`}
+  className={`search-user-avatar ${user.color}`}
+  aria-label={`Xem hồ sơ ${user.name}`}
+>
+  {renderAvatar(user)}
+</Link>
 
                     <div className="search-user-info">
-                      <strong><Link to={`/profile?user=${encodeURIComponent(user.name)}`}>{user.name}</Link></strong>
+                     <strong>
+  <Link to={`/profile?userId=${user.id}`}>
+    {user.name}
+  </Link>
+</strong>
                       <span>@{user.username}</span>
                       <p>{user.bio}</p>
                       <small>
@@ -553,13 +566,12 @@ const handleUnblockUser = (user) => {
                     </div>
 
                     <div className="search-user-actions">
-                      <button
-                        type="button"
-                        className="search-view-button"
-                        onClick={() => setSelectedUser(user)}
-                      >
-                        Xem hồ sơ
-                      </button>
+                      <Link
+  to={`/profile?userId=${user.id}`}
+  className="search-view-button"
+>
+  Xem hồ sơ
+</Link>
 
                       {blocked ? (
                         <button
@@ -634,36 +646,6 @@ const handleUnblockUser = (user) => {
             </div>
           )}
         </div>
-
-        {selectedUser && (
-          <div className="search-profile-preview">
-            <button
-              type="button"
-              className="search-preview-close"
-              onClick={() => setSelectedUser(null)}
-            >
-              ✕
-            </button>
-
-            <div
-              className={`search-preview-avatar ${selectedUser.color}`}
-            >
-              {selectedUser.avatar}
-            </div>
-
-            <h2>{selectedUser.name}</h2>
-            <span>@{selectedUser.username}</span>
-            <p>{selectedUser.bio}</p>
-
-            <div className="search-preview-friends">
-              👥 {selectedUser.mutualFriends} bạn chung
-            </div>
-
-            <small>
-              Đây là hồ sơ người dùng mẫu trong phiên bản demo.
-            </small>
-          </div>
-        )}
       </main>
     </div>
   );
