@@ -1,28 +1,50 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 
+import {
+  MOCK_ACCOUNTS,
+  ACCOUNT_EVENT,
+  getCurrentAccount,
+  readAccountData,
+  isUser,
+} from "../utils/mockAccounts";
+
 const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
-
-// THÔNG TIN MẶC ĐỊNH
-const defaultProfile = {
-  fullName: "Nguyễn Văn A",
-  avatar: "",
-};
-
-// ĐỌC THÔNG TIN CÁ NHÂN
+// ĐỌC THÔNG TIN TÀI KHOẢN HIỆN TẠI
 function readProfile() {
+  const account =
+    getCurrentAccount() || MOCK_ACCOUNTS[0];
+
+  const defaultProfile = {
+    ...account,
+    avatar: account.avatar || "",
+  };
+
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(PROFILE_KEY) || "{}"
+    // GIỮ LẠI HỒ SƠ CŨ CỦA TÀI KHOẢN A
+    const legacyProfile =
+      account.id === 1
+        ? JSON.parse(
+            localStorage.getItem(PROFILE_KEY) || "{}"
+          )
+        : {};
+
+    const savedProfile = readAccountData(
+      PROFILE_KEY,
+      legacyProfile,
+      account.id
     );
 
     return {
       ...defaultProfile,
-      ...saved,
+      ...savedProfile,
+      id: account.id,
+      username: account.username,
+      email: account.email,
     };
   } catch {
-    return { ...defaultProfile };
+    return defaultProfile;
   }
 }
 
@@ -79,45 +101,36 @@ function Sidebar() {
   ]);
 
   // ĐỒNG BỘ THÔNG TIN NGƯỜI DÙNG
-  useEffect(() => {
-    const refreshProfile = () => {
-      setProfile(readProfile());
-    };
+useEffect(() => {
+  const refreshProfile = () => {
+    setProfile(readProfile());
+  };
 
-    refreshProfile();
+  refreshProfile();
 
+  const events = [
+    ACCOUNT_EVENT,
+    PROFILE_EVENT,
+    "storage",
+    "focus",
+  ];
+
+  events.forEach((event) => {
     window.addEventListener(
-      PROFILE_EVENT,
+      event,
       refreshProfile
     );
+  });
 
-    window.addEventListener(
-      "storage",
-      refreshProfile
-    );
-
-    window.addEventListener(
-      "focus",
-      refreshProfile
-    );
-
-    return () => {
+  return () => {
+    events.forEach((event) => {
       window.removeEventListener(
-        PROFILE_EVENT,
+        event,
         refreshProfile
       );
-
-      window.removeEventListener(
-        "storage",
-        refreshProfile
-      );
-
-      window.removeEventListener(
-        "focus",
-        refreshProfile
-      );
-    };
-  }, []);
+    });
+  };
+}, []);
 
   const getMenuClass = ({ isActive }) =>
     `sidebar-menu${isActive ? " active" : ""}`;
@@ -133,13 +146,21 @@ function Sidebar() {
     setIsProfileOpen(!isProfileOpen);
     setIsFriendsOpen(false);
   };
+  // CHỈ HIỂN THỊ SIDEBAR CHO USER
+if (!isUser()) {
+  return null;
+}
 
   return (
     <aside className="facebook-sidebar">
 
       {/* THÔNG TIN NGƯỜI DÙNG */}
       <Link to="/profile" className="sidebar-user">
-        <span className="sidebar-avatar">
+        <span
+  className={`sidebar-avatar ${
+    profile.color || "blue"
+  }`}
+>
           {profile.avatar ? (
             <img
               src={profile.avatar}
@@ -156,8 +177,8 @@ function Sidebar() {
         </span>
 
         <strong>
-          {profile.fullName || "Nguyễn Văn A"}
-        </strong>
+  {profile.fullName || "Người dùng"}
+</strong>
       </Link>
 
       {/* MENU CHÍNH */}

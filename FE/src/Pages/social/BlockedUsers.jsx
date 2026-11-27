@@ -1,34 +1,81 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  ACCOUNT_EVENT,
+  getCurrentAccount,
+  getAccountById,
+  readAccountData,
+  saveAccountData,
+  isUser,
+} from "../../utils/mockAccounts";
 
-const STORAGE_KEY = "miniSocialBlockedUsers";
-const BLOCKED_EVENT = "miniSocialBlockedUsersUpdated";
+import {
+  BLOCKED_KEY,
+  BLOCKED_EVENT,
+  FRIEND_EVENT,
+  getFriendProfile,
+  removeRelationshipWith,
+} from "../../utils/friendUtils";
+
+const PROFILE_EVENT = "miniSocialProfileUpdated";
+
+// ĐỌC DỮ LIỆU CHẶN GỐC
+function readRawBlockedUsers() {
+  const account = getCurrentAccount();
+
+  if (!isUser(account)) return [];
+
+  const data = readAccountData(
+    BLOCKED_KEY,
+    [],
+    account.id
+  );
+
+  return Array.isArray(data) ? data : [];
+}
 
 // ĐỌC DANH SÁCH NGƯỜI DÙNG ĐÃ CHẶN
 function readBlockedUsers() {
-  try {
-    const data = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) || "[]"
-    );
+  const account = getCurrentAccount();
 
-    return Array.isArray(data)
-      ? data.filter(
-          (item) =>
-            item &&
-            typeof item === "object" &&
-            !Array.isArray(item)
-        )
-      : [];
-  } catch (error) {
-    console.error(
-      "Không thể đọc danh sách đã chặn:",
-      error
-    );
+  if (!isUser(account)) return [];
 
-    return [];
-  }
+  return readRawBlockedUsers()
+    .filter((item) => {
+      if (
+        !item ||
+        typeof item !== "object" ||
+        Array.isArray(item)
+      ) {
+        return false;
+      }
+
+      const userId = item.userId ?? item.id;
+      const target = getAccountById(userId);
+
+      return (
+        isUser(target) &&
+        String(target.id) !== String(account.id)
+      );
+    })
+    .map((item) => {
+      const userId = item.userId ?? item.id;
+
+      const profile = getFriendProfile(userId);
+
+      return {
+        ...item,
+        userId,
+        name: profile?.fullName || item.name,
+        username: profile?.username || item.username,
+        avatar: profile?.avatar ?? item.avatar ?? "",
+        color: profile?.color || item.color || "blue",
+        bio: profile?.bio ?? item.bio ?? "",
+      };
+    });
 }
+
 // CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
 function normalizeText(value) {
   return String(value || "")
@@ -43,21 +90,17 @@ function normalizeText(value) {
 function isSameUser(first, second) {
   if (!first || !second) return false;
 
-  if (first.username && second.username) {
-    return first.username === second.username;
+  const firstId = first.userId ?? first.id;
+  const secondId = second.userId ?? second.id;
+
+  if (firstId != null && secondId != null) {
+    return String(firstId) === String(secondId);
   }
 
-  if (first.name && second.name) {
-    return (
-      normalizeText(first.name) ===
-      normalizeText(second.name)
-    );
-  }
-
-  return (
-    first.id != null &&
-    second.id != null &&
-    first.id === second.id
+  return Boolean(
+    first.username &&
+    second.username &&
+    first.username === second.username
   );
 }
 
@@ -85,75 +128,75 @@ function BlockedUsers() {
 
   const [searchValue, setSearchValue] = useState("");
 
-  // ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
-  useEffect(() => {
-    const refreshData = () => {
-      setBlockedUsers(readBlockedUsers());
-    };
+ // ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
+useEffect(() => {
+  const refreshData = () => {
+    setBlockedUsers(readBlockedUsers());
+  };
 
-    refreshData();
+  refreshData();
 
+  const events = [
+    ACCOUNT_EVENT,
+    PROFILE_EVENT,
+    FRIEND_EVENT,
+    BLOCKED_EVENT,
+    "storage",
+    "focus",
+  ];
+
+  events.forEach((event) => {
     window.addEventListener(
-      BLOCKED_EVENT,
+      event,
       refreshData
     );
+  });
 
-    window.addEventListener(
-      "storage",
-      refreshData
-    );
-
-    window.addEventListener(
-      "focus",
-      refreshData
-    );
-
-    return () => {
+  return () => {
+    events.forEach((event) => {
       window.removeEventListener(
-        BLOCKED_EVENT,
+        event,
         refreshData
       );
-
-      window.removeEventListener(
-        "storage",
-        refreshData
-      );
-
-      window.removeEventListener(
-        "focus",
-        refreshData
-      );
-    };
-  }, []);
+    });
+  };
+}, []);
 
   // LƯU DANH SÁCH ĐÃ CHẶN
-  const saveBlockedUsers = (nextUsers) => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(nextUsers)
-      );
+const saveBlockedUsers = (nextUsers) => {
+  const account = getCurrentAccount();
 
-      setBlockedUsers(nextUsers);
+  if (!isUser(account)) {
+    alert("Bạn không có quyền thực hiện thao tác này!");
+    return false;
+  }
 
-      window.dispatchEvent(
-        new Event(BLOCKED_EVENT)
-      );
+  if (!Array.isArray(nextUsers)) {
+    return false;
+  }
 
-      return true;
-    } catch (error) {
-      console.error(
-        "Không thể lưu danh sách đã chặn:",
-        error
-      );
+  const success = saveAccountData(
+    BLOCKED_KEY,
+    nextUsers,
+    account.id
+  );
 
-      alert(
-        "Không thể lưu dữ liệu. Vui lòng thử lại!"
-      );
+  if (!success) {
+    alert(
+      "Không thể lưu dữ liệu. Vui lòng thử lại!"
+    );
 
-      return false;
-    }
-  };
+    return false;
+  }
+
+  setBlockedUsers(readBlockedUsers());
+
+  window.dispatchEvent(
+    new Event(BLOCKED_EVENT)
+  );
+
+  return true;
+};
 
   // TÌM KIẾM NGƯỜI DÙNG
   const filteredUsers = useMemo(() => {
@@ -169,49 +212,119 @@ function BlockedUsers() {
   }, [blockedUsers, searchValue]);
 
   // BỎ CHẶN MỘT NGƯỜI
-  const handleUnblock = (user) => {
-    const displayName =
-      user.name ||
-      user.username ||
-      "người dùng";
+const handleUnblock = (user) => {
+  const account = getCurrentAccount();
 
-    const confirmed = window.confirm(
-      `Bạn có chắc muốn bỏ chặn ${displayName}?`
-    );
+  if (!isUser(account)) {
+    alert("Bạn không có quyền bỏ chặn!");
+    return;
+  }
 
-    if (!confirmed) return;
+  const target = getAccountById(
+    user.userId ?? user.id
+  );
 
-    const currentUsers = readBlockedUsers();
+  if (
+    !isUser(target) ||
+    String(target.id) === String(account.id)
+  ) {
+    alert("Tài khoản không hợp lệ!");
+    return;
+  }
 
-    const updatedUsers = currentUsers.filter(
-      (item) => !isSameUser(item, user)
-    );
+  const displayName =
+    user.name ||
+    user.username ||
+    "người dùng";
 
-    if (saveBlockedUsers(updatedUsers)) {
-      alert(`Đã bỏ chặn ${displayName}.`);
-    }
-  };
+  const confirmed = window.confirm(
+    `Bạn có chắc muốn bỏ chặn ${displayName}?`
+  );
+
+  if (!confirmed) return;
+
+  const currentUsers = readBlockedUsers();
+
+  const blockedUser = currentUsers.find(
+    (item) => isSameUser(item, user)
+  );
+
+  if (!blockedUser) {
+    setBlockedUsers(currentUsers);
+    alert("Người dùng này đã được bỏ chặn!");
+    return;
+  }
+
+  // KHÔNG KHÔI PHỤC QUAN HỆ BẠN BÈ CŨ
+  if (!removeRelationshipWith(target.id)) {
+    alert("Không thể cập nhật quan hệ bạn bè!");
+    return;
+  }
+
+  // GIỮ NGUYÊN CÁC DỮ LIỆU CHẶN KHÁC
+  const updatedUsers = readRawBlockedUsers().filter(
+    (item) => !isSameUser(item, blockedUser)
+  );
+
+  if (saveBlockedUsers(updatedUsers)) {
+    alert(`Đã bỏ chặn ${displayName}.`);
+  }
+};
 
   // BỎ CHẶN TẤT CẢ
-  const handleUnblockAll = () => {
-    const currentUsers = readBlockedUsers();
+const handleUnblockAll = () => {
+  const account = getCurrentAccount();
 
-    if (currentUsers.length === 0) return;
+  if (!isUser(account)) {
+    alert("Bạn không có quyền bỏ chặn!");
+    return;
+  }
 
-    const confirmed = window.confirm(
-      `Bạn có chắc muốn bỏ chặn tất cả ${currentUsers.length} người dùng?`
-    );
+  const currentUsers = readBlockedUsers();
 
-    if (!confirmed) return;
+  if (currentUsers.length === 0) return;
 
-    if (saveBlockedUsers([])) {
-      setSearchValue("");
+  const confirmed = window.confirm(
+    `Bạn có chắc muốn bỏ chặn tất cả ${currentUsers.length} người dùng?`
+  );
 
-      alert(
-        "Đã bỏ chặn tất cả người dùng."
-      );
+  if (!confirmed) return;
+
+  // XÓA CÁC QUAN HỆ CŨ CÒN SÓT LẠI
+  for (const user of currentUsers) {
+    const userId = user.userId ?? user.id;
+
+    const target = getAccountById(userId);
+
+    if (!isUser(target)) {
+      continue;
     }
-  };
+
+    if (!removeRelationshipWith(userId)) {
+      alert(
+        "Không thể hoàn tất thao tác bỏ chặn!"
+      );
+
+      return;
+    }
+  }
+
+  // CHỈ XÓA NHỮNG USER ĐANG HIỂN THỊ
+  const updatedUsers = readRawBlockedUsers().filter(
+    (item) =>
+      !currentUsers.some(
+        (user) => isSameUser(item, user)
+      )
+  );
+
+  if (saveBlockedUsers(updatedUsers)) {
+    setSearchValue("");
+
+    alert(
+      "Đã bỏ chặn tất cả người dùng."
+    );
+  }
+};
 
   return (
     <div className="blocked-users-page">
@@ -393,11 +506,26 @@ function BlockedUsers() {
                 }
               >
                 {/* AVATAR */}
-                <div className="blocked-user-avatar">
-                  {user.avatar ||
-                    user.name?.charAt(0) ||
-                    "U"}
-                </div>
+<div
+  className={`blocked-user-avatar ${
+    user.color || "blue"
+  }`}
+>
+  {user.avatar ? (
+    <img
+      src={user.avatar}
+      alt={`Ảnh đại diện ${user.name}`}
+      className="synced-avatar-image"
+    />
+  ) : (
+    String(user.name || "U")
+      .trim()
+      .split(/\s+/)
+      .pop()
+      ?.charAt(0)
+      .toUpperCase() || "U"
+  )}
+</div>
 
                 {/* THÔNG TIN */}
                 <div className="blocked-user-info">

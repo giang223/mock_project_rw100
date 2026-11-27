@@ -1,6 +1,19 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  MOCK_ACCOUNTS,
+  ACCOUNT_EVENT,
+  getCurrentAccount,
+  readAccountData,
+  isUser,
+} from "../../utils/mockAccounts";
+import {
+  FRIEND_EVENT,
+  BLOCKED_EVENT,
+  getFriendIds,
+  isBlockedBetween,
+} from "../../utils/friendUtils";
 
 const STORAGE_KEY = "miniSocialPosts";
 const POSTS_EVENT = "miniSocialPostsUpdated";
@@ -8,26 +21,47 @@ const POSTS_EVENT = "miniSocialPostsUpdated";
 const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
 
-const CURRENT_USER = "Nguyễn Văn A";
+// LẤY TÀI KHOẢN HIỆN TẠI
+function readCurrentAccount() {
+  const account = getCurrentAccount();
 
-// ĐỌC THÔNG TIN CÁ NHÂN
-function readProfile() {
-  const defaultProfile = {
-    fullName: CURRENT_USER,
-    avatar: "",
-  };
+  return isUser(account) ? account : null;
+}
+
+// TÌM TÀI KHOẢN TÁC GIẢ
+function findAuthorAccount(name, authorId) {
+  return MOCK_ACCOUNTS.find((account) =>
+    authorId != null
+      ? String(account.id) === String(authorId)
+      : account.fullName === name
+  );
+}
+
+// ĐỌC HỒ SƠ THEO TÀI KHOẢN
+function readProfile(account) {
+  if (!account) return null;
 
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(PROFILE_KEY) || "{}"
-    );
+    const legacyProfile =
+      account.id === 1
+        ? JSON.parse(
+            localStorage.getItem(PROFILE_KEY) || "{}"
+          )
+        : {};
 
     return {
-      ...defaultProfile,
-      ...saved,
+      ...account,
+      ...readAccountData(
+        PROFILE_KEY,
+        legacyProfile,
+        account.id
+      ),
+      id: account.id,
+      username: account.username,
+      email: account.email,
     };
   } catch {
-    return defaultProfile;
+    return account;
   }
 }
 
@@ -45,11 +79,118 @@ function readPosts() {
   }
 }
 
-// LẤY DANH SÁCH BÀI VIẾT ĐÃ LƯU
-function readSavedPosts() {
-  return readPosts().filter(
-    (post) => post && post.isSaved === true
+// LẤY DANH SÁCH ID ĐÃ LƯU BÀI VIẾT
+function getSavedBy(post) {
+  if (Array.isArray(post.savedBy)) {
+    return post.savedBy.map(String);
+  }
+
+  // HỖ TRỢ DỮ LIỆU CŨ CỦA TÀI KHOẢN SỐ 1
+  return post.isSaved ? ["1"] : [];
+}
+
+// KIỂM TRA QUYỀN XEM BÀI VIẾT
+function canViewPost(post, account) {
+  if (!post || !account || !isUser(account)) {
+    return false;
+  }
+
+  const author = findAuthorAccount(
+    post.author,
+    post.authorId
   );
+
+  // CHỈ HIỂN THỊ BÀI VIẾT CỦA USER
+  if (!author || !isUser(author)) {
+    return false;
+  }
+
+  // CHỦ BÀI VIẾT LUÔN ĐƯỢC XEM
+  if (
+    String(author.id) === String(account.id)
+  ) {
+    return true;
+  }
+
+  // KIỂM TRA CHẶN HAI CHIỀU
+  if (
+    isBlockedBetween(account.id, author.id)
+  ) {
+    return false;
+  }
+
+  const privacy = post.privacy || "public";
+
+  // BÀI VIẾT CÔNG KHAI
+  if (privacy === "public") {
+    return true;
+  }
+
+  // BÀI VIẾT DÀNH CHO BẠN BÈ
+  if (privacy === "friends") {
+    return getFriendIds(account.id)
+      .map(String)
+      .includes(String(author.id));
+  }
+
+  // BÀI VIẾT RIÊNG TƯ
+  return false;
+}
+
+// LẤY BÀI VIẾT ĐÃ LƯU CỦA TÀI KHOẢN
+function readSavedPosts(
+  account = readCurrentAccount()
+) {
+  if (!account || !isUser(account)) {
+    return [];
+  }
+
+  const allPosts = readPosts();
+
+  return allPosts
+    .filter((post) => {
+      if (!post) return false;
+
+      // KIỂM TRA ĐÃ LƯU BÀI VIẾT
+      const isSaved = getSavedBy(post).includes(
+        String(account.id)
+      );
+
+      if (!isSaved) return false;
+
+      // KIỂM TRA QUYỀN XEM
+      return canViewPost(post, account);
+    })
+    .map((post) => {
+      // BÀI VIẾT THÔNG THƯỜNG
+      if (!post.isShared) {
+        return post;
+      }
+
+      // TÌM BÀI VIẾT GỐC MỚI NHẤT
+      const original = allPosts.find(
+        (item) =>
+          item &&
+          String(item.id) ===
+            String(post.originalPost?.id)
+      );
+
+      // BÀI GỐC KHÔNG CÒN KHẢ DỤNG
+      if (
+        !original ||
+        original.isShared ||
+        !canViewPost(original, account)
+      ) {
+        return null;
+      }
+
+      // ĐỒNG BỘ NỘI DUNG BÀI VIẾT GỐC
+      return {
+        ...post,
+        originalPost: original,
+      };
+    })
+    .filter(Boolean);
 }
 
 // LẤY DANH SÁCH HÌNH ẢNH
@@ -89,77 +230,142 @@ function formatPostTime(value) {
   return date.toLocaleString("vi-VN");
 }
 
+// HIỂN THỊ QUYỀN RIÊNG TƯ
+function getPrivacyLabel(privacy) {
+  switch (privacy) {
+    case "friends":
+      return "👥 Bạn bè";
+
+    case "private":
+      return "🔒 Chỉ mình tôi";
+
+    default:
+      return "🌍 Công khai";
+  }
+}
+
 function SavedPosts() {
-  const [posts, setPosts] = useState(readSavedPosts);
-  const [profile, setProfile] = useState(readProfile);
-  const [searchText, setSearchText] = useState("");
+  const [currentAccount, setCurrentAccount] =
+    useState(readCurrentAccount);
+
+  const [posts, setPosts] =
+    useState(readSavedPosts);
+
+  const [searchText, setSearchText] =
+    useState("");
 
   // ĐỒNG BỘ DỮ LIỆU
   useEffect(() => {
     const refreshData = () => {
-      setPosts(readSavedPosts());
-      setProfile(readProfile());
+      const account = readCurrentAccount();
+
+      setCurrentAccount(account);
+      setPosts(readSavedPosts(account));
     };
 
     refreshData();
 
-    window.addEventListener(POSTS_EVENT, refreshData);
-    window.addEventListener(PROFILE_EVENT, refreshData);
-    window.addEventListener("storage", refreshData);
-    window.addEventListener("focus", refreshData);
+    const events = [
+  ACCOUNT_EVENT,
+  POSTS_EVENT,
+  PROFILE_EVENT,
+  FRIEND_EVENT,
+  BLOCKED_EVENT,
+  "storage",
+  "focus",
+];
+
+    events.forEach((event) => {
+      window.addEventListener(
+        event,
+        refreshData
+      );
+    });
 
     return () => {
-      window.removeEventListener(POSTS_EVENT, refreshData);
-      window.removeEventListener(PROFILE_EVENT, refreshData);
-      window.removeEventListener("storage", refreshData);
-      window.removeEventListener("focus", refreshData);
+      events.forEach((event) => {
+        window.removeEventListener(
+          event,
+          refreshData
+        );
+      });
     };
   }, []);
 
-  // HIỂN THỊ TÊN NGƯỜI DÙNG
-  const displayName = (name, isMine = false) => {
-    if (isMine || name === CURRENT_USER) {
-      return profile.fullName || CURRENT_USER;
-    }
+ // LẤY HỒ SƠ TÁC GIẢ
+const getAuthorProfile = (name, authorId) => {
+  const account = findAuthorAccount(
+    name,
+    authorId
+  );
 
-    return name || "Người dùng";
-  };
+  return account
+    ? readProfile(account)
+    : {
+        fullName: name || "Người dùng",
+        avatar: "",
+      };
+};
 
-  // HIỂN THỊ ẢNH ĐẠI DIỆN
-  const renderAvatar = (name, isMine = false) => {
-    if (
-      (isMine || name === CURRENT_USER) &&
-      profile.avatar
-    ) {
-      return (
-        <img
-          src={profile.avatar}
-          alt="Ảnh đại diện"
-          className="synced-avatar-image"
-        />
-      );
-    }
+// HIỂN THỊ TÊN NGƯỜI DÙNG
+const displayName = (name, authorId) => {
+  const authorProfile = getAuthorProfile(
+    name,
+    authorId
+  );
 
+  return authorProfile.fullName || "Người dùng";
+};
+
+// HIỂN THỊ ẢNH ĐẠI DIỆN
+const renderAvatar = (name, authorId) => {
+  const authorProfile = getAuthorProfile(
+    name,
+    authorId
+  );
+
+  if (authorProfile.avatar) {
     return (
-      displayName(name, isMine)
-        .trim()
-        .split(/\s+/)
-        .pop()
-        ?.charAt(0)
-        .toUpperCase() || "U"
+      <img
+        src={authorProfile.avatar}
+        alt="Ảnh đại diện"
+        className="synced-avatar-image"
+      />
     );
-  };
+  }
 
-  // ĐƯỜNG DẪN TRANG CÁ NHÂN
-  const getProfileLink = (name, isMine = false) => {
-    if (isMine || name === CURRENT_USER) {
+  return (
+    String(authorProfile.fullName || "U")
+      .trim()
+      .split(/\s+/)
+      .pop()
+      ?.charAt(0)
+      .toUpperCase() || "U"
+  );
+};
+
+// ĐƯỜNG DẪN TRANG CÁ NHÂN
+const getProfileLink = (name, authorId) => {
+  const account = findAuthorAccount(
+    name,
+    authorId
+  );
+
+  if (account) {
+    if (
+      String(account.id) ===
+      String(currentAccount?.id)
+    ) {
       return "/profile";
     }
 
-    return `/profile?user=${encodeURIComponent(
-      name || "Người dùng"
-    )}`;
-  };
+    return `/profile?userId=${account.id}`;
+  }
+
+  return `/profile?user=${encodeURIComponent(
+    name || "Người dùng"
+  )}`;
+};
 
   // TÌM KIẾM KHÔNG PHÂN BIỆT DẤU
   const normalizeText = (value) => {
@@ -177,7 +383,7 @@ function SavedPosts() {
 
     const searchableText = normalizeText(
       [
-        displayName(post.author, post.isMine),
+        displayName(post.author, post.authorId),
         post.content,
         post.feeling,
         post.location,
@@ -185,7 +391,7 @@ function SavedPosts() {
         post.originalPost
           ? displayName(
               post.originalPost.author,
-              post.originalPost.isMine
+              post.originalPost.authorId
             )
           : "",
       ].join(" ")
@@ -194,51 +400,95 @@ function SavedPosts() {
     return searchableText.includes(keyword);
   });
 
-  // BỎ LƯU BÀI VIẾT
-  const handleUnsave = (id) => {
-    const confirmed = window.confirm(
-      "Bạn có chắc chắn muốn bỏ lưu bài viết này không?"
+  // BỎ LƯU BÀI VIẾT THEO TÀI KHOẢN
+const handleUnsave = (id) => {
+  const account = getCurrentAccount();
+
+  // KIỂM TRA QUYỀN USER
+  if (
+    !account ||
+    !isUser(account) ||
+    String(account.id) !== String(currentAccount?.id)
+  ) {
+    alert("Bạn không có quyền thực hiện thao tác này!");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Bạn có chắc chắn muốn bỏ lưu bài viết này không?"
+  );
+
+  if (!confirmed) return;
+
+  const userId = String(account.id);
+
+  try {
+    const allPosts = JSON.parse(
+      localStorage.getItem(STORAGE_KEY) || "[]"
     );
 
-    if (!confirmed) return;
+    if (!Array.isArray(allPosts)) {
+      alert("Dữ liệu bài viết không hợp lệ!");
+      return;
+    }
 
-    try {
-      const allPosts = JSON.parse(
-        localStorage.getItem(STORAGE_KEY) || "[]"
-      );
+    // KIỂM TRA BÀI VIẾT CÓ ĐƯỢC LƯU KHÔNG
+    const target = allPosts.find(
+      (post) =>
+        post &&
+        String(post.id) === String(id)
+    );
 
-      if (!Array.isArray(allPosts)) {
-        alert("Dữ liệu bài viết không hợp lệ!");
-        return;
+    if (
+      !target ||
+      !getSavedBy(target).includes(userId)
+    ) {
+      setPosts(readSavedPosts(account));
+
+      alert("Bài viết này không còn trong danh sách đã lưu!");
+      return;
+    }
+
+    // CHỈ BỎ LƯU CỦA TÀI KHOẢN HIỆN TẠI
+    const updatedPosts = allPosts.map((post) => {
+      if (
+        !post ||
+        String(post.id) !== String(id)
+      ) {
+        return post;
       }
 
-      const updatedPosts = allPosts.map((post) =>
-        post && post.id === id
-          ? { ...post, isSaved: false }
-          : post
-      );
+      const savedBy = getSavedBy(post);
 
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(updatedPosts)
-      );
+      return {
+        ...post,
+        savedBy: savedBy.filter(
+          (item) => item !== userId
+        ),
+      };
+    });
 
-      setPosts(
-        updatedPosts.filter(
-          (post) => post && post.isSaved === true
-        )
-      );
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(updatedPosts)
+    );
 
-      window.dispatchEvent(
-        new Event(POSTS_EVENT)
-      );
+    setPosts(readSavedPosts(account));
 
-      alert("Đã bỏ lưu bài viết!");
-    } catch (error) {
-      console.error("Lỗi khi bỏ lưu bài viết:", error);
-      alert("Không thể cập nhật bài viết!");
-    }
-  };
+    window.dispatchEvent(
+      new Event(POSTS_EVENT)
+    );
+
+    alert("Đã bỏ lưu bài viết!");
+  } catch (error) {
+    console.error(
+      "Lỗi khi bỏ lưu bài viết:",
+      error
+    );
+
+    alert("Không thể cập nhật bài viết!");
+  }
+};
 
   return (
     <div className="saved-page">
@@ -307,12 +557,11 @@ function SavedPosts() {
               </div>
 
               <h2>
-                Chưa có bài viết nào được lưu
+               Không có bài viết đã lưu khả dụng
               </h2>
 
               <p>
-                Hãy lưu những bài viết bạn yêu thích
-                để xem lại sau nhé!
+                Những bài viết bạn đã lưu và còn quyền xem sẽ xuất hiện tại đây.
               </p>
 
               <Link
@@ -326,7 +575,7 @@ function SavedPosts() {
             <>
               {/* SỐ LƯỢNG */}
               <div className="saved-count">
-                Bạn đã lưu {posts.length} bài viết
+                {posts.length} bài viết đã lưu khả dụng
 
                 {searchText && (
                   <span>
@@ -377,13 +626,13 @@ function SavedPosts() {
                       <Link
                         to={getProfileLink(
                           post.author,
-                          post.isMine
+                          post.authorId
                         )}
                         className="saved-avatar"
                       >
                         {renderAvatar(
                           post.author,
-                          post.isMine
+                          post.authorId
                         )}
                       </Link>
 
@@ -392,18 +641,20 @@ function SavedPosts() {
                           <Link
                             to={getProfileLink(
                               post.author,
-                              post.isMine
+                              post.authorId
                             )}
                           >
                             {displayName(
                               post.author,
-                              post.isMine
+                              post.authorId
                             )}
                           </Link>
                         </strong>
 
                         <span>
   {formatPostTime(post.createdAt)}
+  {" · "}
+  {getPrivacyLabel(post.privacy)}
 </span>
                       </div>
 
@@ -450,13 +701,13 @@ function SavedPosts() {
                             <Link
                               to={getProfileLink(
                                 original.author,
-                                original.isMine
+                                original.authorId
                               )}
                               className="saved-avatar"
                             >
                               {renderAvatar(
                                 original.author,
-                                original.isMine
+                                original.authorId
                               )}
                             </Link>
 
@@ -465,18 +716,20 @@ function SavedPosts() {
                                 <Link
                                   to={getProfileLink(
                                     original.author,
-                                    original.isMine
+                                    original.authorId
                                   )}
                                 >
                                   {displayName(
                                     original.author,
-                                    original.isMine
+                                    original.authorId
                                   )}
                                 </Link>
                               </strong>
 
                               <span>
   {formatPostTime(original.createdAt)}
+  {" · "}
+  {getPrivacyLabel(original.privacy)}
 </span>
                             </div>
                           </div>
