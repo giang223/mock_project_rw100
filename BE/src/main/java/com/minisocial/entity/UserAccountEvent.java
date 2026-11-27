@@ -1,0 +1,32 @@
+package com.minisocial.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "user_account_events", indexes = {
+        @Index(name = "idx_user_account_events_user_created", columnList = "user_id,created_at")
+})
+@EntityListeners(AuditingEntityListener.class)
+@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+public class UserAccountEvent {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    @Column(name = "event_type", nullable = false, length = 32)
+    private String eventType;
+
+    @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+}

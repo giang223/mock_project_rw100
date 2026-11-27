@@ -1,0 +1,2 @@
+ALTER TABLE posts
+    ADD COLUMN feeling VARCHAR(80) NULL;
