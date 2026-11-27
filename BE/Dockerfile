@@ -4,7 +4,7 @@ COPY pom.xml .
 COPY src ./src
 RUN mvn --batch-mode --no-transfer-progress -DskipTests package
 
-FROM eclipse-temurin:21.0.13.1_2-jre-noble
+FROM eclipse-temurin:24.0.2_12-jre-noble
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
