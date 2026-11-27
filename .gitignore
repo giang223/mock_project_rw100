@@ -1,0 +1,4 @@
+BE/target/
+FE/node_modules/
+**/.env
+**/uploads/

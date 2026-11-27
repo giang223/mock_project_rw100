@@ -1,0 +1,16 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+jwt:
+  secret: ${JWT_SECRET:mini-social-local-development-secret-change-this}
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:${FRONTEND_URL:http://localhost:5173},http://localhost:3000}
+
+logging:
+  level:
+    com.minisocial: DEBUG
