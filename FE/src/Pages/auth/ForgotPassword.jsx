@@ -1,19 +1,20 @@
 
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { requestPasswordReset } from "../../api/auth";
+import { getApiErrorMessage } from "../../api/http";
 
 const RESEND_DURATION = 60;
 
 function ForgotPassword() {
-  const navigate = useNavigate();
-
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [requestedEmail, setRequestedEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [resendAt, setResendAt] = useState(0);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(0);
 
   // THỜI GIAN CHỜ GỬI LẠI
   const resendTime = Math.max(
@@ -82,7 +83,7 @@ useEffect(() => {
   };
 
   // GỬI YÊU CẦU ĐẶT LẠI MẬT KHẨU
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     setError("");
@@ -91,42 +92,19 @@ useEffect(() => {
 
     if (Date.now() < resendAt) return;
 
-    /*
-      TODO: KẾT NỐI API FORGOT PASSWORD
-
-      1. Gửi email đến Backend.
-      2. Backend kiểm tra yêu cầu.
-      3. Tạo reset token có thời hạn.
-      4. Gửi liên kết đặt lại mật khẩu.
-      5. Trả về thông báo chung để tránh
-         tiết lộ email có tồn tại hay không.
-    */
-
-    // HIỆN TẠI CHỈ KIỂM THỬ FRONTEND
     const currentTime = Date.now();
-
-    setRequestedEmail(email.trim());
-    setNow(currentTime);
-
-    setResendAt(
-  currentTime + RESEND_DURATION * 1000
-);
-
-    setSuccess(true);
-  };
-
-  // TRẢI NGHIỆM RESET PASSWORD
-  const handleDemoReset = () => {
-    if (!requestedEmail) return;
-
-    setSuccess(false);
-
-    navigate("/reset-password", {
-      state: {
-        email: requestedEmail,
-        demo: true,
-      },
-    });
+    setIsSubmitting(true);
+    try {
+      await requestPasswordReset(email.trim());
+      setRequestedEmail(email.trim());
+      setNow(currentTime);
+      setResendAt(currentTime + RESEND_DURATION * 1000);
+      setSuccess(true);
+    } catch (requestError) {
+      setError(getApiErrorMessage(requestError, "Không thể gửi yêu cầu. Vui lòng thử lại."));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // CHE MỘT PHẦN EMAIL
@@ -159,12 +137,6 @@ const maskEmail = (value) => {
           Đừng lo lắng! Hãy nhập địa chỉ email
           đã đăng ký để đặt lại mật khẩu.
         </p>
-
-        {/* THÔNG BÁO DEMO */}
-        <div className="forgot-demo-note">
-          Chế độ kiểm thử Frontend.
-          Chưa hỗ trợ gửi email thật.
-        </div>
 
         {/* FORM */}
         <form onSubmit={handleSubmit} noValidate>
@@ -208,23 +180,25 @@ const maskEmail = (value) => {
           <button
             type="submit"
             className="login-button forgot-submit-button"
-            disabled={resendTime > 0}
+            disabled={resendTime > 0 || isSubmitting}
           >
-            {resendTime > 0
+            {isSubmitting
+              ? "Đang gửi…"
+              : resendTime > 0
               ? `Gửi lại sau ${resendTime}s`
               : "Gửi liên kết đặt lại mật khẩu"}
           </button>
 
         </form>
 
-        {/* MỞ LẠI KẾT QUẢ DEMO */}
+        {/* MỞ LẠI THÔNG BÁO */}
         {requestedEmail && (
           <button
             type="button"
             className="forgot-view-result"
             onClick={() => setSuccess(true)}
           >
-            Xem lại yêu cầu kiểm thử
+            Xem lại hướng dẫn
           </button>
         )}
 
@@ -285,26 +259,13 @@ const maskEmail = (value) => {
             </div>
 
             <p>
-              Khi hệ thống được kết nối Backend,
-              nếu email tồn tại trong hệ thống,
-              bạn sẽ nhận được hướng dẫn đặt lại
-              mật khẩu.
+              Nếu địa chỉ này thuộc tài khoản MiniSocial,
+              email hướng dẫn đặt lại mật khẩu sẽ được gửi.
             </p>
 
             <div className="forgot-modal-note">
-              Đây là chế độ demo.
-              Chưa có liên kết đặt lại mật khẩu
-              nào được gửi đến email.
+              Hãy kiểm tra hộp thư đến và thư rác. Liên kết có thời hạn 1 giờ.
             </div>
-
-            {/* CHUYỂN ĐẾN RESET PASSWORD */}
-            <button
-              type="button"
-              className="login-button"
-              onClick={handleDemoReset}
-            >
-              Trải nghiệm đặt lại mật khẩu
-            </button>
 
             {/* ĐÓNG POPUP */}
             <button

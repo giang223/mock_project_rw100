@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { changePassword } from "../../api/auth";
+import { getApiErrorMessage } from "../../api/http";
+import { useAuth } from "../../context/auth";
 
 const initialForm = {
   currentPassword: "",
@@ -8,11 +11,14 @@ const initialForm = {
 };
 
 function ChangePassword() {
+  const navigate = useNavigate();
+  const { clearSession } = useAuth();
   const [formData, setFormData] = useState(initialForm);
 
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // YÊU CẦU MẬT KHẨU
   const passwordRules = [
@@ -105,9 +111,9 @@ function ChangePassword() {
     } else if (formData.newPassword.length < 8) {
       newErrors.newPassword =
         "Mật khẩu mới phải có ít nhất 8 ký tự!";
-    } else if (formData.newPassword.length > 128) {
+    } else if (formData.newPassword.length > 100) {
       newErrors.newPassword =
-        "Mật khẩu không được vượt quá 128 ký tự!";
+        "Mật khẩu không được vượt quá 100 ký tự!";
     } else if (
       !passwordRules.every((rule) => rule.valid)
     ) {
@@ -136,32 +142,26 @@ function ChangePassword() {
   };
 
   // CẬP NHẬT MẬT KHẨU
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
     setSubmitMessage("");
 
     if (!validateForm()) return;
 
-    /*
-      TODO: KẾT NỐI BACKEND
-
-      1. Gửi mật khẩu hiện tại và mật khẩu mới.
-      2. Backend xác thực mật khẩu hiện tại.
-      3. Kiểm tra mật khẩu mới.
-      4. Mã hóa mật khẩu mới.
-      5. Cập nhật Database.
-      6. Trả về kết quả.
-    */
-
-    // HIỆN TẠI CHỈ KIỂM THỬ FRONTEND
-    setSubmitMessage(
-      "Dữ liệu hợp lệ. Chức năng đổi mật khẩu đang chờ kết nối Backend. Mật khẩu của bạn chưa được thay đổi."
-    );
-
-    setFormData({ ...initialForm });
-    setShowPassword(false);
-    setErrors({});
+    setIsSubmitting(true);
+    try {
+      await changePassword(formData);
+      clearSession();
+      navigate("/login", {
+        replace: true,
+        state: { authMessage: "Đổi mật khẩu thành công. Vui lòng đăng nhập lại." },
+      });
+    } catch (error) {
+      setSubmitMessage(getApiErrorMessage(error, "Không thể đổi mật khẩu. Vui lòng thử lại."));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // XÓA DỮ LIỆU ĐÃ NHẬP
@@ -190,7 +190,7 @@ function ChangePassword() {
         {submitMessage && (
           <div
             className="password-info-message"
-            role="status"
+            role="alert"
           >
             {submitMessage}
           </div>
@@ -211,6 +211,7 @@ function ChangePassword() {
               name="currentPassword"
               placeholder="Nhập mật khẩu hiện tại"
               autoComplete="current-password"
+              maxLength={100}
               value={formData.currentPassword}
               onChange={handleChange}
               aria-invalid={Boolean(errors.currentPassword)}
@@ -247,7 +248,7 @@ function ChangePassword() {
               name="newPassword"
               placeholder="Nhập mật khẩu mới"
               autoComplete="new-password"
-              maxLength={128}
+              maxLength={100}
               value={formData.newPassword}
               onChange={handleChange}
               aria-invalid={Boolean(errors.newPassword)}
@@ -331,7 +332,7 @@ function ChangePassword() {
               name="confirmPassword"
               placeholder="Nhập lại mật khẩu mới"
               autoComplete="new-password"
-              maxLength={128}
+              maxLength={100}
               value={formData.confirmPassword}
               onChange={handleChange}
               aria-invalid={Boolean(errors.confirmPassword)}
@@ -384,8 +385,9 @@ function ChangePassword() {
           <button
             type="submit"
             className="login-button"
+            disabled={isSubmitting}
           >
-            Cập nhật mật khẩu
+            {isSubmitting ? "Đang cập nhật…" : "Cập nhật mật khẩu"}
           </button>
 
           <button

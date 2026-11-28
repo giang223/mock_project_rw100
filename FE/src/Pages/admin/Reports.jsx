@@ -2,94 +2,33 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 
-import {
-  ACCOUNT_EVENT,
-  getCurrentAccount,
-  getAccountById,
-  getAccountByName,
-  readAccountData,
-  getMockUsers,
-  switchMockAccount,
-  logoutMockAccount,
-  isAdmin,
-} from "../../utils/mockAccounts";
+import { getCurrentAccount, isAdmin } from "../../utils/mockAccounts";
+import { useAuth } from "../../context/auth";
+import { getReports, resolveReport, dismissReport, deleteReport, deleteReportedPost, deleteReportedComment } from "../../api/admin";
+import { pageContent } from "../../api/apiResponse";
+import { getApiErrorMessage } from "../../api/http";
 
-import {
-  addNotification,
-} from "../notification/notificationUtils";
-
-const REPORT_KEY = "miniSocialReports";
-const POST_KEY = "miniSocialPosts";
-const PROFILE_KEY = "miniSocialProfile";
-
-const REPORT_EVENT = "miniSocialReportsUpdated";
-const POST_EVENT = "miniSocialPostsUpdated";
-const PROFILE_EVENT = "miniSocialProfileUpdated";
-
-// ĐỌC DỮ LIỆU LOCALSTORAGE
-function readData(key) {
-  try {
-    const saved = localStorage.getItem(key);
-    const data = saved ? JSON.parse(saved) : [];
-
-    return Array.isArray(data) ? data : [];
-  } catch (error) {
-    console.error("Không thể đọc dữ liệu:", error);
-    return [];
-  }
-}
-
-// ĐỌC DANH SÁCH BÁO CÁO
-function readReports() {
-  return readData(REPORT_KEY)
-    .filter((item) => item && typeof item === "object")
-    .map((item) => ({
-      ...item,
-      status: ["pending", "resolved", "rejected"].includes(
-        item.status
-      )
-        ? item.status
-        : "pending",
-    }));
-}
-
-// TÌM TÀI KHOẢN THEO ID HOẶC TÊN
-function findReportAccount(accountId, name) {
-  if (accountId != null) {
-    return getAccountById(accountId);
-  }
-
-  return getAccountByName(name);
-}
-
-// ĐỌC HỒ SƠ THEO TÀI KHOẢN
-function readProfile(account) {
-  if (!account) return null;
-
-  try {
-    const legacyProfile =
-      String(account.id) === "1"
-        ? JSON.parse(
-            localStorage.getItem(PROFILE_KEY) || "{}"
-          )
-        : {};
-
-    const savedProfile = readAccountData(
-      PROFILE_KEY,
-      legacyProfile,
-      account.id
-    );
-
-    return {
-      ...account,
-      ...savedProfile,
-      id: account.id,
-      username: account.username,
-      email: account.email,
-    };
-  } catch {
-    return account;
-  }
+function toReportView(item) {
+  const status = { PENDING: "pending", RESOLVED: "resolved", DISMISSED: "rejected" }[item?.status] || "pending";
+  const postAuthor = item?.targetType === "COMMENT" ? item?.commentAuthor : item?.postAuthor;
+  const reporter = item?.reporter;
+  const reviewedBy = item?.reviewedBy;
+  return {
+    ...item,
+    status,
+    postContent: item?.targetType === "COMMENT" ? item?.commentContent : item?.postContent,
+    postAuthor: postAuthor?.fullName || "Không xác định",
+    postAuthorId: postAuthor?.id,
+    reporter: reporter?.fullName || "Không xác định",
+    reporterId: reporter?.id,
+    postImage: item?.postImageUrl || "",
+    postImages: item?.postImageUrl ? [item.postImageUrl] : [],
+    detail: item?.reviewNote || "",
+    processedBy: reviewedBy?.fullName || "",
+    processedById: reviewedBy?.id,
+    processedAt: item?.reviewedAt,
+    action: status === "resolved" ? "reviewed" : status === "rejected" ? "rejected" : "",
+  };
 }
 
 // TÌM KIẾM KHÔNG PHÂN BIỆT DẤU
@@ -149,104 +88,44 @@ function getImages(images, image) {
 }
 
 function Reports() {
-  const [currentAdmin, setCurrentAdmin] =
-  useState(getCurrentAccount);
-
-const [selectedAccount, setSelectedAccount] =
-  useState("");
+  const { logout } = useAuth();
+  const currentAdmin = getCurrentAccount();
 
 const [viewingReportId, setViewingReportId] =
   useState(null);
-  const [reports, setReports] = useState(readReports);
-
-  const [posts, setPosts] = useState(
-    () => readData(POST_KEY)
-  );
+  const [reports, setReports] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
 
-  // ĐỒNG BỘ DỮ LIỆU
+  // Load moderation data from the protected admin API.
   useEffect(() => {
-    const refreshData = () => {
-  setCurrentAdmin(getCurrentAccount());
-  setReports(readReports());
-  setPosts(readData(POST_KEY));
-};
-
-    refreshData();
-
-    const events = [
-  REPORT_EVENT,
-  POST_EVENT,
-  PROFILE_EVENT,
-  ACCOUNT_EVENT,
-  "storage",
-  "focus",
-];
-
-    events.forEach((event) => {
-      window.addEventListener(event, refreshData);
-    });
-
-    return () => {
-      events.forEach((event) => {
-        window.removeEventListener(event, refreshData);
-      });
+    let active = true;
+    const refreshData = async () => {
+      setIsLoading(true);
+      setLoadError("");
+      try {
+        const page = await getReports({ page: 0, size: 100 });
+        if (active) setReports(pageContent(page).map(toReportView));
+      } catch (error) {
+        if (active) setLoadError(getApiErrorMessage(error));
+      } finally {
+        if (active) setIsLoading(false);
+      }
     };
+    refreshData();
+    window.addEventListener("focus", refreshData);
+    return () => { active = false; window.removeEventListener("focus", refreshData); };
   }, []);
 
-  // HIỂN THỊ TÊN NGƯỜI DÙNG
-const displayName = (name, accountId) => {
-  const account = findReportAccount(
-    accountId,
-    name
-  );
+const displayName = (name) => name || "Không xác định";
 
-  if (account) {
-    return (
-      readProfile(account)?.fullName ||
-      account.fullName
-    );
-  }
-
-  return name || "Không xác định";
-};
-
-  // LƯU BÁO CÁO
-  const saveReports = (nextReports) => {
-  if (!isAdmin()) {
-    alert("Bạn không có quyền quản trị!");
-    return false;
-  }
-
-  try {
-      localStorage.setItem(
-        REPORT_KEY,
-        JSON.stringify(nextReports)
-      );
-
-      setReports(nextReports);
-
-      window.dispatchEvent(
-        new Event(REPORT_EVENT)
-      );
-
-      return true;
-    } catch (error) {
-      console.error("Không thể lưu báo cáo:", error);
-
-      alert("Không thể cập nhật báo cáo!");
-
-      return false;
-    }
-  };
-
-  // TÌM BÀI VIẾT GỐC
+  // The report response contains the moderation snapshot; no local post copy is authoritative.
   const getOriginalPost = (postId) => {
-    return posts.find(
-      (post) => String(post.id) === String(postId)
-    );
+    const report = reports.find((item) => String(item.postId) === String(postId));
+    return report ? { id: report.postId, content: report.postContent, image: report.postImage, images: report.postImages || [] } : null;
   };
 
   // THỐNG KÊ BÁO CÁO
@@ -287,402 +166,89 @@ const displayName = (name, accountId) => {
     );
   });
 
-  // THÔNG BÁO KẾT QUẢ XỬ LÝ BÁO CÁO
-const notifyReportResult = (report, action) => {
-  const admin = getCurrentAccount();
-
-  const reporter = findReportAccount(
-    report.reporterId,
-    report.reporter
-  );
-
-  if (!isAdmin(admin) || !reporter) return;
-
-  let message = "";
-
-  switch (action) {
-    case "deleted_post":
-      message =
-        "đã xử lý báo cáo của bạn và xóa bài viết vi phạm.";
-      break;
-
-    case "rejected":
-      message =
-        "đã xem xét và từ chối báo cáo của bạn.";
-      break;
-
-    default:
-      message =
-        "đã xem xét báo cáo của bạn và giữ nguyên bài viết.";
-  }
-
-  addNotification({
-    type: "report",
-    senderId: admin.id,
-    receiverId: reporter.id,
-    message,
-  });
-};
-
- // CẬP NHẬT TRẠNG THÁI
-const updateReportStatus = (
-  id,
-  status,
-  action
-) => {
-  const admin = getCurrentAccount();
-
-  if (!isAdmin(admin)) {
-    alert("Bạn không có quyền quản trị!");
-    return false;
-  }
-
-  const current = readReports();
-
-  const target = current.find(
-    (report) =>
-      String(report.id) === String(id)
-  );
-
-  if (!target) {
-    alert("Báo cáo không còn tồn tại!");
-    return false;
-  }
-
-  if (target.status !== "pending") {
-    alert("Báo cáo này đã được xử lý!");
-    return false;
-  }
-
-  const nextReports = current.map((report) =>
-    String(report.id) === String(id)
-      ? {
-          ...report,
-          status,
-          action,
-          processedById: admin.id,
-          processedBy: admin.fullName,
-          processedAt: new Date().toISOString(),
-        }
-      : report
-  );
-
-  if (!saveReports(nextReports)) {
-    return false;
-  }
-
-  notifyReportResult(target, action);
-
-  return true;
-};
-  // ĐÁNH DẤU ĐÃ XỬ LÝ
-  const handleResolve = (id) => {
-    const confirmed = window.confirm(
-      "Đánh dấu báo cáo đã xử lý và giữ nguyên bài viết?"
-    );
-
-    if (!confirmed) return;
-
-    if (
-      updateReportStatus(
-        id,
-        "resolved",
-        "reviewed"
-      )
-    ) {
-      alert("Đã cập nhật trạng thái báo cáo!");
+  const refreshReports = async () => {
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const page = await getReports({ page: 0, size: 100 });
+      setReports(pageContent(page).map(toReportView));
+    } catch (error) {
+      setLoadError(getApiErrorMessage(error));
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // TỪ CHỐI BÁO CÁO
-  const handleReject = (id) => {
-    const confirmed = window.confirm(
-      "Bạn có chắc chắn muốn từ chối báo cáo này?"
-    );
-
-    if (!confirmed) return;
-
-    if (
-      updateReportStatus(
-        id,
-        "rejected",
-        "rejected"
-      )
-    ) {
-      alert("Đã từ chối báo cáo!");
+  const handleResolve = async (id) => {
+    if (!window.confirm("Đánh dấu báo cáo đã xử lý và giữ nguyên nội dung?")) return;
+    try {
+      await resolveReport(id);
+      await refreshReports();
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
-  // XÓA BÁO CÁO
-const handleDeleteReport = (id) => {
-  const admin = getCurrentAccount();
+  const handleReject = async (id) => {
+    if (!window.confirm("Bạn có chắc chắn muốn từ chối báo cáo này?")) return;
+    try {
+      await dismissReport(id);
+      await refreshReports();
+    } catch (error) {
+      alert(getApiErrorMessage(error));
+    }
+  };
 
-  if (!isAdmin(admin)) {
-    alert("Bạn không có quyền quản trị!");
-    return;
-  }
-
-  const current = readReports();
-
-  const target = current.find(
-    (report) =>
-      String(report.id) === String(id)
-  );
-
-  if (!target) {
-    alert("Báo cáo không còn tồn tại!");
-    return;
-  }
-
-  if (target.status === "pending") {
-    alert("Hãy xử lý báo cáo trước khi xóa!");
-    return;
-  }
-
-  const confirmed = window.confirm(
-    "Bạn có chắc chắn muốn xóa báo cáo này?"
-  );
-
-  if (!confirmed) return;
-
-  const latestReports = readReports();
-
-  if (
-    saveReports(
-      latestReports.filter(
-        (report) =>
-          String(report.id) !== String(id)
-      )
-    )
-  ) {
-    alert("Đã xóa báo cáo!");
-  }
-};
-
-  // XÓA BÀI VIẾT VI PHẠM
-const handleDeletePost = (report) => {
-  const admin = getCurrentAccount();
-
-  if (!isAdmin(admin)) {
-    alert("Bạn không có quyền quản trị!");
-    return;
-  }
-
-  const confirmed = window.confirm(
-    "Bạn có chắc chắn muốn xóa bài viết vi phạm này không?"
-  );
-
-  if (!confirmed) return;
-
-  try {
-    const currentReports = readReports();
-
-    const targetReport = currentReports.find(
-      (item) =>
-        String(item.id) === String(report.id)
-    );
-
-    if (
-      !targetReport ||
-      targetReport.status !== "pending" ||
-      targetReport.postId == null
-    ) {
-      alert("Báo cáo không còn khả dụng!");
+  const handleDeleteReport = async (id) => {
+    const report = reports.find((item) => String(item.id) === String(id));
+    if (!report || report.status === "pending") {
+      alert("Hãy xử lý báo cáo trước khi xóa.");
       return;
     }
-
-    const currentPosts = readData(POST_KEY);
-
-    const targetPost = currentPosts.find(
-      (post) =>
-        post &&
-        String(post.id) ===
-          String(targetReport.postId)
-    );
-
-    if (!targetPost) {
-      setPosts(currentPosts);
-      alert("Bài viết không còn tồn tại!");
-      return;
+    if (!window.confirm("Bạn có chắc chắn muốn xóa báo cáo này?")) return;
+    try {
+      await deleteReport(id);
+      setReports((current) => current.filter((item) => String(item.id) !== String(id)));
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
+  };
 
-    // XÓA BÀI VIẾT VI PHẠM
-    const updatedPosts = currentPosts.filter(
-      (post) =>
-        String(post?.id) !==
-        String(targetReport.postId)
-    );
-
-    // LẤY CÁC BÁO CÁO LIÊN QUAN
-    const relatedReports = currentReports.filter(
-      (item) =>
-        String(item.postId) ===
-          String(targetReport.postId) &&
-        item.status === "pending"
-    );
-
-    const processedAt = new Date().toISOString();
-
-    // CẬP NHẬT TRẠNG THÁI BÁO CÁO
-    const updatedReports = currentReports.map(
-      (item) =>
-        String(item.postId) ===
-          String(targetReport.postId) &&
-        item.status === "pending"
-          ? {
-              ...item,
-              status: "resolved",
-              action: "deleted_post",
-              processedById: admin.id,
-              processedBy: admin.fullName,
-              processedAt,
-            }
-          : item
-    );
-
-    // LƯU BÀI VIẾT
-    localStorage.setItem(
-      POST_KEY,
-      JSON.stringify(updatedPosts)
-    );
-
-    setPosts(updatedPosts);
-
-    window.dispatchEvent(
-      new Event(POST_EVENT)
-    );
-
-    // LƯU BÁO CÁO
-    if (!saveReports(updatedReports)) {
-      alert(
-        "Bài viết đã bị xóa nhưng chưa cập nhật được báo cáo!"
-      );
-      return;
+  const handleDeletePost = async (report) => {
+    if (!window.confirm("Xóa nội dung vi phạm? Hành động này sẽ gỡ nội dung khỏi hệ thống.")) return;
+    try {
+      if (report.commentId != null) await deleteReportedComment(report.commentId);
+      else await deleteReportedPost(report.postId);
+      await refreshReports();
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
+  };
 
-    // THÔNG BÁO CHO NGƯỜI BÁO CÁO
-    const notifiedUsers = new Set();
-
-    relatedReports.forEach((item) => {
-      const reporter = findReportAccount(
-        item.reporterId,
-        item.reporter
-      );
-
-      if (
-        reporter &&
-        !notifiedUsers.has(String(reporter.id))
-      ) {
-        notifiedUsers.add(String(reporter.id));
-
-        notifyReportResult(
-          item,
-          "deleted_post"
-        );
-      }
-    });
-
-    // THÔNG BÁO CHO CHỦ BÀI VIẾT
-    const author = findReportAccount(
-      targetPost.authorId,
-      targetPost.author
-    );
-
-    if (author) {
-      addNotification({
-        type: "report",
-        senderId: admin.id,
-        receiverId: author.id,
-        message:
-          "đã xóa bài viết của bạn do vi phạm quy định cộng đồng.",
-      });
+  const handleLogout = async () => {
+    if (!window.confirm("Bạn có chắc chắn muốn đăng xuất không?")) return;
+    try {
+      await logout();
+      window.location.replace("/login");
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Không thể đăng xuất. Vui lòng thử lại."));
     }
+  };
 
-    alert("Đã xóa bài viết vi phạm!");
-  } catch (error) {
-    console.error(
-      "Lỗi khi xóa bài viết:",
-      error
-    );
+  const handleViewReportedPost = (report) => {
+    if (!isAdmin()) return;
+    setViewingReportId(report.id);
+  };
 
-    alert("Không thể hoàn tất xử lý bài viết!");
-  }
-};
+  const handleCloseReportedPost = () => setViewingReportId(null);
+
+  const viewingReport = reports.find((report) => String(report.id) === String(viewingReportId));
 
   // XÓA BỘ LỌC
   const resetFilters = () => {
     setSearch("");
     setFilter("all");
   };
-  // CHUYỂN ĐỔI SANG TÀI KHOẢN USER
-const handleSwitchAccount = () => {
-  if (!isAdmin()) return;
-
-  const account = getMockUsers().find(
-    (item) =>
-      String(item.id) === selectedAccount
-  );
-
-  if (!account) {
-    alert("Vui lòng chọn tài khoản người dùng!");
-    return;
-  }
-
-  const confirmed = window.confirm(
-    `Chuyển sang tài khoản ${account.fullName}?`
-  );
-
-  if (!confirmed) return;
-
-  const success = switchMockAccount(account.id);
-
-  if (!success) {
-    alert("Không thể chuyển đổi tài khoản!");
-    return;
-  }
-
-  window.location.replace("/feed");
-};
-
-// ĐĂNG XUẤT ADMIN
-const handleLogout = () => {
-  const confirmed = window.confirm(
-    "Bạn có chắc chắn muốn đăng xuất không?"
-  );
-
-  if (!confirmed) return;
-
-  try {
-    logoutMockAccount();
-
-    window.location.replace("/login");
-  } catch {
-    alert("Không thể đăng xuất. Vui lòng thử lại!");
-  }
-};
-
-// MỞ CHI TIẾT BÁO CÁO
-const handleViewReportedPost = (report) => {
-  if (!isAdmin()) return;
-
-  setViewingReportId(report.id);
-};
-
-// ĐÓNG CHI TIẾT BÁO CÁO
-const handleCloseReportedPost = () => {
-  setViewingReportId(null);
-};
-
-// LẤY BÁO CÁO ĐANG XEM
-const viewingReport = reports.find(
-  (report) =>
-    String(report.id) === String(viewingReportId)
-);
-
-const viewingPost = viewingReport
-  ? getOriginalPost(viewingReport.postId)
-  : null;
-
 // ĐÓNG POPUP BẰNG PHÍM ESC
 useEffect(() => {
   if (viewingReportId == null) return;
@@ -753,41 +319,6 @@ if (!isAdmin(currentAdmin)) {
           ADMIN
         </span>
       </div>
-
-    </div>
-
-    {/* CHUYỂN TÀI KHOẢN */}
-    <div className="admin-switch-account">
-
-      <select
-        aria-label="Chọn tài khoản người dùng"
-        value={selectedAccount}
-        onChange={(event) =>
-          setSelectedAccount(event.target.value)
-        }
-      >
-        <option value="">
-          Chọn tài khoản USER
-        </option>
-
-        {getMockUsers().map((account) => (
-          <option
-            key={account.id}
-            value={account.id}
-          >
-            {account.fullName}
-          </option>
-        ))}
-      </select>
-
-      <button
-        type="button"
-        className="admin-switch-button"
-        disabled={!selectedAccount}
-        onClick={handleSwitchAccount}
-      >
-        Chuyển tài khoản
-      </button>
 
     </div>
 
@@ -885,7 +416,14 @@ if (!isAdmin(currentAdmin)) {
       {/* DANH SÁCH BÁO CÁO */}
       <div className="report-list">
 
-        {filteredReports.length === 0 ? (
+        {isLoading ? (
+          <p role="status">Đang tải báo cáo…</p>
+        ) : loadError ? (
+          <div role="alert" className="report-empty">
+            <p>{loadError}</p>
+            <button type="button" onClick={refreshReports}>Thử tải lại</button>
+          </div>
+        ) : filteredReports.length === 0 ? (
           <div className="report-empty">
             <span>📭</span>
 
@@ -925,7 +463,7 @@ if (!isAdmin(currentAdmin)) {
                 <div className="report-card-header">
                   <div>
                     <span className="report-label">
-                      Bài viết bị báo cáo
+                      {report.targetType === "COMMENT" ? "Bình luận bị báo cáo" : "Bài viết bị báo cáo"}
                     </span>
 
                     <h3>
@@ -966,7 +504,7 @@ if (!isAdmin(currentAdmin)) {
                   )}
 
                   <p>
-                    <strong>Nội dung bài viết:</strong>
+                    <strong>{report.targetType === "COMMENT" ? "Nội dung bình luận:" : "Nội dung bài viết:"}</strong>
                   </p>
 
                   <div className="reported-post-content">
@@ -1000,9 +538,7 @@ if (!isAdmin(currentAdmin)) {
                           : "post-unavailable"
                       }
                     >
-                      {postExists
-                        ? "Còn tồn tại"
-                        : "Không còn tồn tại"}
+                      {postExists ? "Có dữ liệu snapshot" : "Không có dữ liệu snapshot"}
                     </span>
                   </p>
 
@@ -1088,7 +624,7 @@ if (!isAdmin(currentAdmin)) {
                           handleDeletePost(report)
                         }
                       >
-                        🗑 Xóa bài viết
+                        {report.commentId != null ? "🗑 Xóa bình luận" : "🗑 Xóa bài viết"}
                       </button>
                     </>
                   )}
@@ -1184,14 +720,6 @@ if (!isAdmin(currentAdmin)) {
                 {getStatusLabel(viewingReport.status)}
               </p>
 
-              {!viewingPost && (
-                <div className="admin-post-warning">
-                  Bài viết không còn tồn tại.
-                  Đang hiển thị dữ liệu đã lưu
-                  tại thời điểm báo cáo.
-                </div>
-              )}
-
               {/* NỘI DUNG TẠI THỜI ĐIỂM BÁO CÁO */}
               <h3>Nội dung khi bị báo cáo</h3>
 
@@ -1212,39 +740,6 @@ if (!isAdmin(currentAdmin)) {
                   />
                 ))}
               </div>
-
-              {/* NỘI DUNG HIỆN TẠI */}
-              {viewingPost && (
-                <>
-                  <h3>Nội dung hiện tại</h3>
-
-                  <div className="admin-post-content">
-                    {viewingPost.content ||
-                      "Không có nội dung văn bản."}
-                  </div>
-
-                  <div className="admin-post-gallery">
-                    {getImages(
-                      viewingPost.images,
-                      viewingPost.image
-                    ).map((src, index) => (
-                      <img
-                        key={index}
-                        src={src}
-                        alt={`Ảnh hiện tại ${index + 1}`}
-                      />
-                    ))}
-                  </div>
-
-                  {viewingPost.isShared && (
-                    <p>
-                      <strong>Bài viết chia sẻ từ ID:</strong>{" "}
-                      {viewingPost.originalPost?.id ||
-                        "Không xác định"}
-                    </p>
-                  )}
-                </>
-              )}
 
             </div>
 

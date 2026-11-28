@@ -1,64 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { addNotification } from "./notification/notificationUtils";
-import {
-  MOCK_ACCOUNTS,
-  ACCOUNT_EVENT,
-  getCurrentAccount,
-  getAccountById,
-  getAccountByName,
-  readAccountData,
-  saveAccountData,
-  getMockUsers,
-  isUser,
-} from "../utils/mockAccounts";
-import {
-  FRIEND_EVENT,
-  BLOCKED_EVENT,
-  getFriendProfile,
-  getFriendStatus,
-  getFriendIds,
-  getRelationship,
-  isBlockedBetween,
-  sendFriendRequest,
-  cancelFriendRequest,
-} from "../utils/friendUtils";
+import { MOCK_ACCOUNTS, ACCOUNT_EVENT, getCurrentAccount } from "../utils/mockAccounts";
+import { pageContent } from "../api/apiResponse";
+import { getApiErrorMessage } from "../api/http";
+import { toFriendView, toPostView, toStoryView, toMessageView } from "../api/adapters";
+import { getFriends, getFriendSuggestions, getSentFriendRequests, getReceivedFriendRequests, sendFriendRequest as sendFriendRequestApi, cancelFriendRequest as cancelFriendRequestApi } from "../api/friends";
+import { searchUsers } from "../api/users";
+import { getFeed } from "../api/posts";
+import { createStory as createStoryApi, createStoryWithMedia, getStories, recordStoryView, deleteStory } from "../api/stories";
+import { getConversations, openDirectConversation, getMessages, sendMessage, sendMediaMessage, markConversationRead, setMessageReaction, removeMessageReaction } from "../api/messages";
 
-const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
 
-function readProfile(
-  account = getCurrentAccount() || MOCK_ACCOUNTS[0]
-) {
-  const defaultProfile = {
+function readProfile(account = getCurrentAccount() || MOCK_ACCOUNTS[0]) {
+  return {
     ...account,
-    avatar: account.avatar || "",
+    avatar: account?.avatar || account?.avatarUrl || "",
+    cover: account?.cover || account?.coverUrl || "",
+    fullName: account?.fullName || account?.username || "Người dùng",
   };
-
-  try {
-    const legacyProfile =
-      account.id === 1
-        ? JSON.parse(
-            localStorage.getItem(PROFILE_KEY) || "{}"
-          )
-        : {};
-
-    const saved = readAccountData(
-      PROFILE_KEY,
-      legacyProfile,
-      account.id
-    );
-
-    return {
-      ...defaultProfile,
-      ...saved,
-      id: account.id,
-      username: account.username,
-      email: account.email,
-    };
-  } catch {
-    return defaultProfile;
-  }
 }
 
 // HOOK ĐỒNG BỘ HỒ SƠ
@@ -115,21 +75,6 @@ function ProfileAvatar({ profile }) {
   );
 }
 
-const storeKey = "miniSocialMessagesV2";
-const conversationsKey = "miniSocialConversationsV2";
-function readConversations() {
-  try {
-    const value = readAccountData(
-      conversationsKey,
-      []
-    );
-
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
-}
-
 function Shell({ title, subtitle, children }) {
   const profile = useCurrentProfile();
 
@@ -169,17 +114,7 @@ const currentUserId = currentAccount.id;
 // LẤY TÀI KHOẢN ĐĂNG TIN
 const getStoryAccount = (story) => {
   if (!story) return null;
-
-  if (story.authorId != null) {
-    return getAccountById(story.authorId);
-  }
-
-  return getAccountByName(
-    story.author ||
-      (story.isMine || story.name === "Bạn"
-        ? "Nguyễn Văn A"
-        : story.name)
-  );
+  return story.authorProfile || { id: story.authorId, fullName: story.author || story.name, avatar: story.avatar };
 };
 
 // KIỂM TRA QUYỀN SỞ HỮU TIN
@@ -187,56 +122,15 @@ const isOwnStory = (story) => {
   const account = getStoryAccount(story);
 
   return (
-    isUser(getCurrentAccount()) &&
-    isUser(account) &&
+    Boolean(getCurrentAccount()) &&
+    Boolean(account) &&
     String(account.id) === String(currentUserId)
   );
 };
 
 // KIỂM TRA QUYỀN XEM TIN
 const canViewStory = (story) => {
-  if (!story || !isUser(getCurrentAccount())) {
-    return false;
-  }
-
-  // KIỂM TRA TIN HẾT HẠN
-  if (
-    story.expiresAt &&
-    !(Date.parse(story.expiresAt) > Date.now())
-  ) {
-    return false;
-  }
-
-  const author = getStoryAccount(story);
-
-  // CHỈ CHO PHÉP XEM TIN CỦA USER
-  if (!isUser(author)) {
-    return false;
-  }
-
-  // CHỦ TIN ĐƯỢC XEM TIN CỦA MÌNH
-  if (isOwnStory(story)) {
-    return true;
-  }
-
-  // KIỂM TRA CHẶN HAI CHIỀU
-  if (isBlockedBetween(currentUserId, author.id)) {
-    return false;
-  }
-
-  const privacy = story.privacy || "public";
-
-  if (privacy === "public") {
-    return true;
-  }
-
-  if (privacy === "friends") {
-    return getFriendIds(currentUserId)
-      .map(String)
-      .includes(String(author.id));
-  }
-
-  return false;
+  return Boolean(story) && (!story.expiresAt || Date.parse(story.expiresAt) > Date.now());
 };
 
 // HIỂN THỊ QUYỀN RIÊNG TƯ CỦA TIN
@@ -256,18 +150,7 @@ const getStoryPrivacyLabel = (privacy) => {
 // LẤY HỒ SƠ NGƯỜI ĐĂNG TIN
 const getStoryProfile = (story) => {
   const account = getStoryAccount(story);
-
-  if (account) {
-    return readProfile(account);
-  }
-
-  return {
-    fullName:
-      story?.author ||
-      story?.name ||
-      "Người dùng",
-    avatar: "",
-  };
+  return account ? { ...account, fullName: account.fullName || story?.author || story?.name || "Người dùng" } : { fullName: "Người dùng", avatar: "" };
 };
 
 // KIỂM TRA TRẠNG THÁI ĐÃ XEM
@@ -278,30 +161,7 @@ const isStorySeen = (story) => {
 
   return viewedBy.includes(String(currentUserId));
 };
-  const STORY_KEY = "miniSocialStories";
-  const STORY_EVENT = "miniSocialStoriesUpdated";
-  const STORY_DURATION = 24 * 60 * 60 * 1000;
-
-  // ĐỌC DANH SÁCH TIN
-  const readStories = () => {
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem(STORY_KEY) || "[]"
-      );
-
-      if (!Array.isArray(saved)) return [];
-
-      return saved.filter(
-        (story) =>
-          !story.expiresAt ||
-          new Date(story.expiresAt).getTime() > Date.now()
-      );
-    } catch {
-      return [];
-    }
-  };
-
-  const [stories, setStories] = useState(readStories);
+  const [stories, setStories] = useState([]);
   const [active, setActive] = useState(null);
 
   // TẠO TIN
@@ -309,8 +169,10 @@ const isStorySeen = (story) => {
   const [text, setText] = useState("");
   const [media, setMedia] = useState("");
   const [mediaType, setMediaType] = useState("");
+  const [mediaFile, setMediaFile] = useState(null);
   const [privacy, setPrivacy] = useState("public");
   const [isLoading, setIsLoading] = useState(false);
+  const [storyError, setStoryError] = useState("");
 
   const [color, setColor] = useState(
     "linear-gradient(145deg,#2563eb,#8b5cf6)"
@@ -325,97 +187,23 @@ const isStorySeen = (story) => {
     "linear-gradient(145deg,#a855f7,#ec4899)",
   ];
 
-  // LƯU VÀ ĐỒNG BỘ TIN
-  const saveStories = (next) => {
-    const account = getCurrentAccount();
-
-    if (
-      !isUser(account) ||
-      String(account.id) !== String(currentUserId)
-    ) {
-      return false;
-    }
-
+  const refreshStories = useCallback(async () => {
+    setStoryError("");
     try {
-      localStorage.setItem(
-        STORY_KEY,
-        JSON.stringify(next)
-      );
-
-      setStories(next);
-
-      window.dispatchEvent(
-        new Event(STORY_EVENT)
-      );
-
-      return true;
-    } catch {
-      alert(
-        "Không thể lưu tin. Bộ nhớ trình duyệt có thể đã đầy!"
-      );
-
-      return false;
+      const page = await getStories({ page: 0, size: 100 });
+      const items = pageContent(page).map((story) => toStoryView(story, currentUserId));
+      setStories(items);
+      setActive((previous) => previous ? items.find((item) => String(item.id) === String(previous.id)) || null : null);
+    } catch (error) {
+      setStoryError(getApiErrorMessage(error));
     }
-  };
+  }, [currentUserId]);
 
-  // TỰ ĐỘNG KIỂM TRA TIN VÀ QUYỀN XEM
-useEffect(() => {
-  const refreshStories = () => {
-    const current = readStories();
-
-    setStories(current);
-
-    setActive((previous) => {
-      if (!previous) return null;
-
-      const updated = current.find(
-        (item) =>
-          String(item.id) === String(previous.id)
-      );
-
-      if (!updated || !canViewStory(updated)) {
-        return null;
-      }
-
-      return updated;
-    });
-  };
-
-  refreshStories();
-
-  const timer = setInterval(
-    refreshStories,
-    1000
-  );
-
-  const events = [
-    STORY_EVENT,
-    PROFILE_EVENT,
-    ACCOUNT_EVENT,
-    FRIEND_EVENT,
-    BLOCKED_EVENT,
-    "storage",
-    "focus",
-  ];
-
-  events.forEach((event) => {
-    window.addEventListener(
-      event,
-      refreshStories
-    );
-  });
-
-  return () => {
-    clearInterval(timer);
-
-    events.forEach((event) => {
-      window.removeEventListener(
-        event,
-        refreshStories
-      );
-    });
-  };
-}, [currentUserId]);
+  useEffect(() => {
+    refreshStories();
+    window.addEventListener("focus", refreshStories);
+    return () => window.removeEventListener("focus", refreshStories);
+  }, [refreshStories]);
 
   // CHỌN ẢNH HOẶC VIDEO
   const handleMediaChange = (event) => {
@@ -438,6 +226,7 @@ useEffect(() => {
       return;
     }
 
+    setMediaFile(file);
     setIsLoading(true);
 
     const reader = new FileReader();
@@ -460,27 +249,27 @@ useEffect(() => {
   const handleRemoveMedia = () => {
     setMedia("");
     setMediaType("");
+    setMediaFile(null);
   };
 
   // HỦY TẠO TIN
   const handleCancel = () => {
-    if (isLoading) return;
-
     setIsCreating(false);
     setText("");
     setMedia("");
     setMediaType("");
+    setMediaFile(null);
     setPrivacy("public");
   };
 
   // ĐĂNG TIN
-  const handleCreateStory = (event) => {
+  const handleCreateStory = async (event) => {
     event.preventDefault();
 
     const account = getCurrentAccount();
 
     if (
-      !isUser(account) ||
+      !account ||
       String(account.id) !== String(currentUserId)
     ) {
       alert("Bạn không có quyền đăng tin!");
@@ -494,106 +283,44 @@ useEffect(() => {
       return;
     }
 
-    const newStory = {
-  id: Date.now(),
-  authorId: currentUserId,
-  author: currentAccount.fullName,
-  authorUsername: currentAccount.username,
-  name: profile.fullName,
-  text: text.trim(),
-  media,
-  mediaType,
-  color,
-  privacy,
-  viewedBy: [],
-  createdAt: new Date().toISOString(),
-  expiresAt: new Date(
-    Date.now() + STORY_DURATION
-  ).toISOString(),
-};
-
-    const next = [newStory, ...readStories()];
-
-    if (saveStories(next)) {
+    setIsLoading(true);
+    try {
+      const payload = {
+        content: text.trim() || undefined,
+        visibility: privacy.toUpperCase(),
+        mediaType: mediaFile ? (mediaFile.type.startsWith("video/") ? "VIDEO" : "IMAGE") : undefined,
+      };
+      if (mediaFile) await createStoryWithMedia({ ...payload, file: mediaFile });
+      else await createStoryApi(payload);
+      await refreshStories();
       handleCancel();
-      alert("Đăng tin thành công!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
+    } finally {
+      setIsLoading(false);
     }
   };
 
  // XEM TIN
-const handleViewStory = (story) => {
-  const currentStories = readStories();
-
-  const currentStory = currentStories.find(
-    (item) =>
-      String(item.id) === String(story.id)
-  );
-
-  if (!currentStory) {
-    alert("Tin này đã hết hạn hoặc đã bị xóa!");
-    return;
-  }
-
-  if (!canViewStory(currentStory)) {
+const handleViewStory = async (story) => {
+  if (!story || !canViewStory(story)) {
     alert("Bạn không có quyền xem tin này!");
     return;
   }
-
-  // XEM TIN CỦA CHÍNH MÌNH
-  if (isOwnStory(currentStory)) {
-    setActive(currentStory);
-    return;
-  }
-
-  // DANH SÁCH NGƯỜI ĐÃ XEM
-  const viewedBy = Array.isArray(
-    currentStory.viewedBy
-  )
-    ? currentStory.viewedBy.map(String)
-    : [];
-
-  // ĐÃ XEM TRƯỚC ĐÓ
-  if (viewedBy.includes(String(currentUserId))) {
-    setActive(currentStory);
-    return;
-  }
-
-  const updatedStory = {
-    ...currentStory,
-    viewedBy: [
-      ...new Set([
-        ...viewedBy,
-        String(currentUserId),
-      ]),
-    ],
-  };
-
-  const updatedStories = currentStories.map(
-    (item) =>
-      String(item.id) === String(currentStory.id)
-        ? updatedStory
-        : item
-  );
-
-  if (saveStories(updatedStories)) {
-    setActive(updatedStory);
+  setActive({ ...story, viewedBy: [currentUserId] });
+  setStories((items) => items.map((item) => String(item.id) === String(story.id) ? { ...item, viewedBy: [currentUserId] } : item));
+  if (!isOwnStory(story)) {
+    try {
+      await recordStoryView(story.id);
+    } catch (error) {
+      setStoryError(getApiErrorMessage(error));
+    }
   }
 };
 
   // XÓA TIN
-const handleDeleteStory = (story) => {
-  const currentStories = readStories();
-
-  const currentStory = currentStories.find(
-    (item) => item.id === story.id
-  );
-
-  if (!currentStory) {
-    setActive(null);
-    return;
-  }
-
-  if (!isOwnStory(currentStory)) {
+const handleDeleteStory = async (story) => {
+  if (!isOwnStory(story)) {
     alert("Bạn không có quyền xóa tin này!");
     return;
   }
@@ -604,12 +331,12 @@ const handleDeleteStory = (story) => {
 
   if (!confirmed) return;
 
-  const next = currentStories.filter(
-    (item) => item.id !== currentStory.id
-  );
-
-  if (saveStories(next)) {
+  try {
+    await deleteStory(story.id);
     setActive(null);
+    await refreshStories();
+  } catch (error) {
+    alert(getApiErrorMessage(error));
   }
 };
 
@@ -621,7 +348,7 @@ const myStories = stories.filter(
 );
 
 // DANH SÁCH TIN CỦA NGƯỜI DÙNG KHÁC
-const friendStories = stories
+  const friendStories = stories
   .filter(
     (story) =>
       !isOwnStory(story) &&
@@ -638,6 +365,7 @@ const friendStories = stories
       title="Tin"
       subtitle="Chia sẻ khoảnh khắc với bạn bè trong 24 giờ."
     >
+      {storyError && <p role="alert">{storyError}</p>}
       {/* TIN CỦA BẠN */}
       <section className="community-panel">
         <div className="community-panel-title">
@@ -1074,75 +802,66 @@ function formatPostTime(value) {
 }
 
 export function Explore() {
-  const profile = useCurrentProfile();
-
   const currentAccount =
     getCurrentAccount() || MOCK_ACCOUNTS[0];
 
   const currentUserId = currentAccount.id;
 
-  const POSTS_KEY = "miniSocialPosts";
-  const POSTS_EVENT = "miniSocialPostsUpdated";
-
-  // ĐỌC DỮ LIỆU BÀI VIẾT
-  const readData = (key) => {
-    try {
-      const data = JSON.parse(
-        localStorage.getItem(key) || "[]"
-      );
-
-      return Array.isArray(data)
-        ? data.filter(
-            (item) =>
-              item &&
-              typeof item === "object" &&
-              !Array.isArray(item)
-          )
-        : [];
-    } catch {
-      return [];
-    }
-  };
-
   // STATE
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [posts, setPosts] = useState([]);
+  const [suggestedPeople, setSuggestedPeople] = useState([]);
+  const [searchPeople, setSearchPeople] = useState([]);
+  const [friendStatuses, setFriendStatuses] = useState({});
+  const [exploreLoading, setExploreLoading] = useState(true);
+  const [exploreError, setExploreError] = useState("");
 
-  const [posts, setPosts] = useState(
-    () => readData(POSTS_KEY)
-  );
-
-  const [, setRefreshVersion] = useState(0);
-
-  // ĐỒNG BỘ DỮ LIỆU
+  // Feed and suggestions are server-filtered for visibility and blocking.
   useEffect(() => {
-    const refreshData = () => {
-      setPosts(readData(POSTS_KEY));
-      setRefreshVersion((previous) => previous + 1);
+    let active = true;
+    const refreshData = async () => {
+      setExploreLoading(true);
+      setExploreError("");
+      try {
+        const [postPage, suggestionsPage, friendsPage, sentPage, receivedPage] = await Promise.all([
+          getFeed({ page: 0, size: 100 }), getFriendSuggestions({ page: 0, size: 50 }),
+          getFriends({ page: 0, size: 100 }), getSentFriendRequests({ page: 0, size: 100 }),
+          getReceivedFriendRequests({ page: 0, size: 100 }),
+        ]);
+        if (!active) return;
+        setPosts(pageContent(postPage).map((post) => toPostView(post, currentUserId)));
+        setSuggestedPeople(pageContent(suggestionsPage).map((item) => toFriendView(item, "suggested")).filter(Boolean));
+        const statuses = {};
+        pageContent(friendsPage).forEach((item) => { const user = toFriendView(item, "accepted"); if (user) statuses[user.id] = { status: "accepted" }; });
+        pageContent(sentPage).forEach((item) => { const user = toFriendView(item, "sent"); if (user) statuses[user.id] = { status: "sent", requestId: user.friendshipId }; });
+        pageContent(receivedPage).forEach((item) => { const user = toFriendView(item, "received"); if (user) statuses[user.id] = { status: "received", requestId: user.friendshipId }; });
+        setFriendStatuses(statuses);
+      } catch (error) {
+        if (active) setExploreError(getApiErrorMessage(error));
+      } finally {
+        if (active) setExploreLoading(false);
+      }
     };
-
     refreshData();
+    window.addEventListener("focus", refreshData);
+    return () => { active = false; window.removeEventListener("focus", refreshData); };
+  }, [currentUserId]);
 
-    const events = [
-      POSTS_EVENT,
-      FRIEND_EVENT,
-      BLOCKED_EVENT,
-      PROFILE_EVENT,
-      ACCOUNT_EVENT,
-      "storage",
-      "focus",
-    ];
-
-    events.forEach((event) => {
-      window.addEventListener(event, refreshData);
-    });
-
-    return () => {
-      events.forEach((event) => {
-        window.removeEventListener(event, refreshData);
-      });
-    };
-  }, []);
+  useEffect(() => {
+    const keyword = query.trim();
+    if (!keyword) { setSearchPeople([]); return undefined; }
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const page = await searchUsers(keyword, { page: 0, size: 30 });
+        if (active) setSearchPeople(pageContent(page).map((item) => toFriendView(item, "none")).filter(Boolean));
+      } catch (error) {
+        if (active) setExploreError(getApiErrorMessage(error));
+      }
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [query]);
 
   // CHUYỂN TIẾNG VIỆT CÓ DẤU THÀNH KHÔNG DẤU
   const normalizeText = (value) => {
@@ -1155,36 +874,10 @@ export function Explore() {
       .trim();
   };
 
- // XÁC ĐỊNH TÀI KHOẢN NGƯỜI ĐĂNG
-const findAuthorAccount = (name, authorId) => {
-  if (authorId != null) {
-    return getAccountById(authorId);
-  }
-
-  return getAccountByName(name);
-};
-
 // LẤY HỒ SƠ NGƯỜI ĐĂNG
 const getAuthorProfile = (name, authorId) => {
-  const account = findAuthorAccount(
-    name,
-    authorId
-  );
-
-  if (account) {
-    if (
-      String(account.id) === String(currentUserId)
-    ) {
-      return profile;
-    }
-
-    return readProfile(account);
-  }
-
-  return {
-    fullName: name || "Người dùng",
-    avatar: "",
-  };
+  const post = posts.find((item) => String(item.authorId) === String(authorId));
+  return post?.authorProfile || { fullName: name || "Người dùng", avatar: post?.avatar || "" };
 };
 
 // HIỂN THỊ TÊN NGƯỜI DÙNG
@@ -1206,39 +899,8 @@ const renderAvatar = (name, authorId) => {
 
 // ĐƯỜNG DẪN TRANG CÁ NHÂN
 const getProfileLink = (name, authorId) => {
-  const account = findAuthorAccount(
-    name,
-    authorId
-  );
-
-  if (account) {
-    if (
-      String(account.id) === String(currentUserId)
-    ) {
-      return "/profile";
-    }
-
-    return `/profile?userId=${account.id}`;
-  }
-
-  return `/profile?user=${encodeURIComponent(
-    name || "Người dùng"
-  )}`;
-};
-
-// KIỂM TRA NGƯỜI DÙNG BỊ CHẶN
-const isBlockedAuthor = (name, authorId) => {
-  const account = findAuthorAccount(
-    name,
-    authorId
-  );
-
-  if (!account) return false;
-
-  return isBlockedBetween(
-    currentUserId,
-    account.id
-  );
+  if (String(authorId) === String(currentUserId)) return "/profile";
+  return authorId != null ? `/profile?userId=${authorId}` : `/profile?user=${encodeURIComponent(name || "Người dùng")}`;
 };
 
 // LẤY USERNAME
@@ -1258,131 +920,12 @@ const getUsername = (person) => {
     return post.image ? [post.image] : [];
   };
 
-  // DANH SÁCH NGƯỜI DÙNG
-const allPeople = getMockUsers()
-  .filter(
-    (account) =>
-      String(account.id) !== String(currentUserId)
-  )
-  .map((account) => {
-    const user = getFriendProfile(account.id);
+  const filteredPeople = (query.trim() ? searchPeople : suggestedPeople)
+    .filter((person) => String(person.id) !== String(currentUserId))
+    .map((person) => ({ ...person, friendStatus: friendStatuses[person.id]?.status || "none" }));
 
-    if (!user) return null;
-
-    return {
-      ...user,
-      id: account.id,
-      name: user.fullName,
-      username: account.username,
-    };
-  })
-  .filter(Boolean);
-
-// TÌM KIẾM NGƯỜI DÙNG
-const filteredPeople = allPeople.filter(
-  (person) => {
-    if (
-      isBlockedBetween(
-        currentUserId,
-        person.id
-      )
-    ) {
-      return false;
-    }
-
-    const keyword = normalizeText(query);
-
-    const searchableText = normalizeText(
-      `${person.name} ${person.username} ${person.bio || ""}`
-    );
-
-    return searchableText.includes(keyword);
-  }
-);
-
-  // KIỂM TRA QUYỀN XEM BÀI VIẾT
-const canViewPost = (post) => {
-  if (!post || !isUser(getCurrentAccount())) {
-    return false;
-  }
-
-  const authorAccount = findAuthorAccount(
-    post.author,
-    post.authorId
-  );
-
-  // CHỈ HIỂN THỊ BÀI VIẾT CỦA USER
-  if (!isUser(authorAccount)) {
-    return false;
-  }
-
-  // CHỦ BÀI VIẾT
-  if (
-    String(authorAccount.id) ===
-    String(currentUserId)
-  ) {
-    return true;
-  }
-
-  // KIỂM TRA NGƯỜI BỊ CHẶN
-  if (
-    isBlockedAuthor(
-      post.author,
-      post.authorId
-    )
-  ) {
-    return false;
-  }
-
-  const privacy = post.privacy || "public";
-
-  if (privacy === "public") {
-    return true;
-  }
-
-  if (privacy === "friends") {
-    return getFriendIds(currentUserId)
-      .map(String)
-      .includes(String(authorAccount.id));
-  }
-
-  return false;
-};
-
-// TÌM KIẾM BÀI VIẾT
-const filteredPosts = posts
-  .filter((post) => canViewPost(post))
-  .map((post) => {
-    // BÀI VIẾT THÔNG THƯỜNG
-    if (!post.isShared) {
-      return post;
-    }
-
-    // LẤY BÀI VIẾT GỐC MỚI NHẤT
-    const original = posts.find(
-      (item) =>
-        item &&
-        String(item.id) ===
-          String(post.originalPost?.id)
-    );
-
-    // BÀI VIẾT GỐC KHÔNG KHẢ DỤNG
-    if (
-      !original ||
-      original.isShared ||
-      !canViewPost(original)
-    ) {
-      return null;
-    }
-
-    // CẬP NHẬT NỘI DUNG BÀI VIẾT GỐC
-    return {
-      ...post,
-      originalPost: original,
-    };
-  })
-  .filter(Boolean)
-  .filter((post) => {
+// The feed endpoint applies visibility rules; the remaining search is local over the loaded page.
+const filteredPosts = posts.filter((post) => {
     const original = post.originalPost || {};
 
     const keyword = normalizeText(query);
@@ -1415,45 +958,23 @@ const filteredPosts = posts
 
   // KIỂM TRA TRẠNG THÁI KẾT BẠN
 const getPersonFriendStatus = (person) => {
-  return getFriendStatus(person.id);
+  return person.friendStatus || friendStatuses[person.id]?.status || "none";
 };
 
 // GỬI LỜI MỜI KẾT BẠN
-const handleAddFriend = (person) => {
-  if (
-    !isUser(getCurrentAccount()) ||
-    !isUser(getAccountById(person.id))
-  ) {
-    alert("Không thể kết bạn với tài khoản này!");
-    return;
-  }
-
-  const success = sendFriendRequest(person.id);
-
-  if (success) {
-    alert(
-      `Đã gửi lời mời kết bạn cho ${person.name}!`
-    );
-  } else {
-    alert("Không thể gửi lời mời kết bạn!");
+const handleAddFriend = async (person) => {
+  try {
+    const request = await sendFriendRequestApi(person.id);
+    setFriendStatuses((current) => ({ ...current, [person.id]: { status: "sent", requestId: request?.id } }));
+  } catch (error) {
+    alert(getApiErrorMessage(error));
   }
 };
 
 // HỦY LỜI MỜI KẾT BẠN
-const handleCancelRequest = (person) => {
-  if (
-    !isUser(getCurrentAccount()) ||
-    !isUser(getAccountById(person.id))
-  ) {
-    return;
-  }
-
-  const relationship = getRelationship(
-    currentUserId,
-    person.id
-  );
-
-  if (!relationship) return;
+const handleCancelRequest = async (person) => {
+  const requestId = friendStatuses[person.id]?.requestId;
+  if (!requestId) { alert("Không tìm thấy lời mời đang chờ để hủy."); return; }
 
   const confirmed = window.confirm(
     `Bạn có muốn hủy lời mời kết bạn với ${person.name} không?`
@@ -1461,14 +982,11 @@ const handleCancelRequest = (person) => {
 
   if (!confirmed) return;
 
-  const success = cancelFriendRequest(
-    relationship.id
-  );
-
-  if (success) {
-    alert("Đã hủy lời mời kết bạn!");
-  } else {
-    alert("Không thể hủy lời mời!");
+  try {
+    await cancelFriendRequestApi(requestId);
+    setFriendStatuses((current) => ({ ...current, [person.id]: { status: "none" } }));
+  } catch (error) {
+    alert(getApiErrorMessage(error));
   }
 };
 
@@ -1498,6 +1016,8 @@ const handleCancelRequest = (person) => {
     >
       {/* THANH TÌM KIẾM */}
       <section className="community-panel explore-search-panel">
+        {exploreError && <p role="alert">{exploreError}</p>}
+        {exploreLoading && <p role="status">Đang tải nội dung khám phá…</p>}
         <div className="explore-search-box">
           <span>🔍</span>
 
@@ -1564,7 +1084,7 @@ const handleCancelRequest = (person) => {
           {filteredPeople.length === 0 ? (
             <div className="explore-empty">
               <span>👥</span>
-              <h3>Không tìm thấy người dùng</h3>
+              <h3>{exploreLoading ? "Đang tải người dùng…" : "Không tìm thấy người dùng"}</h3>
               <p>Hãy thử tìm kiếm bằng từ khóa khác.</p>
             </div>
           ) : (
@@ -1669,7 +1189,7 @@ const handleCancelRequest = (person) => {
             <div className="explore-empty">
               <span>📝</span>
 
-              <h3>Không tìm thấy bài viết</h3>
+              <h3>{exploreLoading ? "Đang tải bài viết…" : "Không tìm thấy bài viết"}</h3>
 
               <p>
                 {query.trim()
@@ -1829,690 +1349,202 @@ const handleCancelRequest = (person) => {
 
 export function Messages() {
   const profile = useCurrentProfile();
-
-  const currentAccount =
-    getCurrentAccount() || MOCK_ACCOUNTS[0];
-
+  const currentAccount = getCurrentAccount() || MOCK_ACCOUNTS[0];
   const currentUserId = String(currentAccount.id);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedUser = searchParams.get("user") || "";
+  const requestedUserId = searchParams.get("userId") || "";
 
-  const [searchParams, setSearchParams] =
-    useSearchParams();
-
-  const requestedUser =
-    searchParams.get("user") || "";
-
-  const requestedUserId =
-    searchParams.get("userId") || "";
-
-  const MESSAGE_EVENT = "miniSocialMessagesUpdated";
-
-  const readData = (key) => {
-    try {
-      const data = JSON.parse(
-        localStorage.getItem(key) || "[]"
-      );
-
-      return Array.isArray(data)
-        ? data.filter(
-            (item) =>
-              item &&
-              typeof item === "object" &&
-              !Array.isArray(item)
-          )
-        : [];
-    } catch {
-      return [];
-    }
-  };
-
-  const [messages, setMessages] = useState(
-    () => readData(storeKey)
-  );
-
-  const [, setSavedConversations] =
-  useState(readConversations);
-
-  const [, setRefreshVersion] = useState(0);
-
+  const [conversations, setConversations] = useState([]);
+  const [friends, setFriends] = useState([]);
+  const [messages, setMessages] = useState([]);
   const [selected, setSelected] = useState("");
   const [draft, setDraft] = useState("");
   const [images, setImages] = useState([]);
-
   const [newContact, setNewContact] = useState("");
   const [showNewChat, setShowNewChat] = useState(false);
-
-  const [showNewGroup, setShowNewGroup] = useState(false);
-  const [groupName, setGroupName] = useState("");
-  const [groupMembers, setGroupMembers] = useState([]);
-
   const [searchText, setSearchText] = useState("");
-
-  const [isLoadingImages, setIsLoadingImages] =
-    useState(false);
-
+  const [isLoadingImages, setIsLoadingImages] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const messageListRef = useRef(null);
-  const imageReadVersion = useRef(0);
 
-  // TÌM KIẾM KHÔNG PHÂN BIỆT DẤU
-  const normalizeText = (value) => {
-    return String(value || "")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/đ/gi, "d")
-      .toLowerCase()
-      .trim();
+  const normalizeText = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "d").toLowerCase().trim();
+
+  const refreshConversations = async () => {
+    const [conversationPage, friendPage] = await Promise.all([
+      getConversations({ page: 0, size: 50 }),
+      getFriends({ page: 0, size: 50 }),
+    ]);
+    const items = pageContent(conversationPage);
+    setConversations(items);
+    setFriends(pageContent(friendPage).map((item) => toFriendView(item, "accepted")).filter(Boolean));
   };
 
-  // KIỂM TRA NGƯỜI BỊ CHẶN
-const isBlocked = (userId) => {
-  return isBlockedBetween(
-    currentUserId,
-    userId
-  );
-};
-
-// KIỂM TRA QUYỀN TRÒ CHUYỆN
-const canChatWith = (userId) => {
-  const account = getCurrentAccount();
-  const target = getAccountById(userId);
-
-  return (
-    isUser(account) &&
-    isUser(target) &&
-    String(account.id) === currentUserId &&
-    String(target.id) !== currentUserId &&
-    !isBlocked(userId)
-  );
-};
-
-// KIỂM TRA TIN NHẮN CỦA MÌNH
-const isMyMessage = (message) => {
-  return (
-    String(message.senderId) === currentUserId
-  );
-};
-
-// KIỂM TRA TIN NHẮN THUỘC CUỘC TRÒ CHUYỆN
-const belongsToConversation = (message, userId) => {
-  const senderId = String(message.senderId);
-  const receiverId = String(message.receiverId);
-  const targetId = String(userId);
-
-  return (
-    (
-      senderId === currentUserId &&
-      receiverId === targetId
-    ) ||
-    (
-      receiverId === currentUserId &&
-      senderId === targetId
-    )
-  );
-};
-
-// KIỂM TRA TIN NHẮN ĐÃ XÓA Ở PHÍA MÌNH
-const isDeletedForMe = (message) => {
-  const deletedBy = Array.isArray(message.deletedBy)
-    ? message.deletedBy.map(String)
-    : [];
-
-  return deletedBy.includes(currentUserId);
-};
-
-  // ĐỒNG BỘ DỮ LIỆU
-useEffect(() => {
-  const refreshData = () => {
-    setMessages(readData(storeKey));
-    setSavedConversations(readConversations());
-    setRefreshVersion((previous) => previous + 1);
-  };
-
-  refreshData();
-
-  const events = [
-    MESSAGE_EVENT,
-    FRIEND_EVENT,
-    BLOCKED_EVENT,
-    PROFILE_EVENT,
-    ACCOUNT_EVENT,
-    "storage",
-    "focus",
-  ];
-
-  events.forEach((event) => {
-    window.addEventListener(event, refreshData);
-  });
-
-  return () => {
-    events.forEach((event) => {
-      window.removeEventListener(event, refreshData);
-    });
-  };
-}, []);
-
-  // LẤY TIN NHẮN CUỐI CÙNG
-const getLastMessage = (userId) => {
-  return messages
-    .filter(
-      (message) =>
-        belongsToConversation(message, userId) &&
-        !isDeletedForMe(message)
-    )
-    .slice(-1)[0];
-};
-
-// NỘI DUNG TIN NHẮN CUỐI
-const getLastMessageText = (userId) => {
-  const last = getLastMessage(userId);
-
-  if (!last) {
-    return "Bắt đầu trò chuyện";
-  }
-
-  if (last.recalled) {
-    return "Tin nhắn đã được thu hồi";
-  }
-
-  const prefix = isMyMessage(last)
-    ? "Bạn: "
-    : "";
-
-  if (last.text) {
-    return prefix + last.text;
-  }
-
-  if (last.image || last.images?.length) {
-    return prefix + "Đã gửi hình ảnh";
-  }
-
-  return "Tin nhắn";
-};
-
-// DANH SÁCH NGƯỜI DÙNG
-const contacts = getMockUsers()
-  .filter((account) => canChatWith(account.id))
-  .map((account) => {
-    const user = getFriendProfile(account.id);
-
-    if (!user) return null;
-
-    return {
-      ...user,
-      id: String(account.id),
-      name: user.fullName,
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        setLoadError("");
+        const [conversationPage, friendPage] = await Promise.all([
+          getConversations({ page: 0, size: 50 }), getFriends({ page: 0, size: 50 }),
+        ]);
+        if (!active) return;
+        setConversations(pageContent(conversationPage));
+        setFriends(pageContent(friendPage).map((item) => toFriendView(item, "accepted")).filter(Boolean));
+      } catch (error) {
+        if (active) setLoadError(getApiErrorMessage(error));
+      }
     };
-  })
-  .filter(Boolean)
-  .sort((a, b) => {
-    const timeA =
-      Date.parse(getLastMessage(a.id)?.createdAt) || 0;
+    load();
+    return () => { active = false; };
+  }, [currentUserId]);
 
-    const timeB =
-      Date.parse(getLastMessage(b.id)?.createdAt) || 0;
-
-    return timeB - timeA;
+  const conversationForUser = (userId) => conversations.find((item) => String(item.otherParticipant?.id) === String(userId));
+  const contacts = [...friends];
+  conversations.forEach((item) => {
+    const user = toFriendView({ user: item.otherParticipant }, "accepted");
+    if (user && !contacts.some((person) => String(person.id) === String(user.id))) contacts.push(user);
   });
+  contacts.forEach((person) => { person.conversationId = conversationForUser(person.id)?.id; });
+  contacts.sort((a, b) => (Date.parse(conversationForUser(b.id)?.lastMessageAt) || 0) - (Date.parse(conversationForUser(a.id)?.lastMessageAt) || 0));
+  const filteredContacts = contacts.filter((person) => normalizeText(`${person.name} ${person.username}`).includes(normalizeText(searchText)));
+  const selectedConversation = conversations.find((item) => String(item.id) === selected);
+  const selectedPerson = selectedConversation ? toFriendView({ user: selectedConversation.otherParticipant }, "accepted") : null;
+  const conversation = messages;
 
-// TÌM KIẾM CUỘC TRÒ CHUYỆN
-const filteredContacts = contacts.filter(
-  (person) =>
-    normalizeText(
-      `${person.name} ${person.username}`
-    ).includes(normalizeText(searchText))
-);
+  const getLastMessage = (userId) => conversationForUser(userId)?.lastMessage || null;
+  const getLastMessageText = (userId) => {
+    const last = getLastMessage(userId);
+    if (!last) return "Bắt đầu trò chuyện";
+    const prefix = String(last.senderId) === currentUserId ? "Bạn: " : "";
+    if (last.content) return prefix + last.content;
+    if (last.mediaUrl) return prefix + (last.mediaType === "VIDEO" ? "Đã gửi video" : "Đã gửi hình ảnh");
+    return "Tin nhắn";
+  };
+  const isMyMessage = (message) => String(message.senderId) === currentUserId;
 
-// DANH SÁCH TIN NHẮN ĐANG XEM
-const conversation = messages.filter(
-  (message) =>
-    selected &&
-    canChatWith(selected) &&
-    belongsToConversation(message, selected) &&
-    !isDeletedForMe(message)
-);
+  useEffect(() => {
+    if (!selected) { setMessages([]); return undefined; }
+    let active = true;
+    const loadMessages = async () => {
+      try {
+        setLoadError("");
+        const page = await getMessages(selected, { page: 0, size: 50 });
+        if (!active) return;
+        const otherId = selectedConversation?.otherParticipant?.id;
+        setMessages(pageContent(page).slice().reverse().map((item) => toMessageView(item, currentUserId, otherId)));
+        await markConversationRead(selected);
+        setConversations((items) => items.map((item) => String(item.id) === selected ? { ...item, unreadCount: 0 } : item));
+      } catch (error) {
+        if (active) setLoadError(getApiErrorMessage(error));
+      }
+    };
+    loadMessages();
+    const timer = window.setInterval(loadMessages, 10000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [selected, selectedConversation?.otherParticipant?.id, currentUserId]);
 
-// NGƯỜI ĐANG TRÒ CHUYỆN
-const selectedPerson = contacts.find(
-  (person) => person.id === selected
-);
-
-  // TỰ ĐỘNG CUỘN XUỐNG TIN NHẮN MỚI
   useEffect(() => {
     const list = messageListRef.current;
-
-    if (list) {
-      list.scrollTop = list.scrollHeight;
-    }
+    if (list) list.scrollTop = list.scrollHeight;
   }, [selected, messages]);
 
-  // ĐÓNG CUỘC TRÒ CHUYỆN NẾU BỊ CHẶN
-useEffect(() => {
-  if (selected && !selectedPerson) {
-    imageReadVersion.current += 1;
-
-    setSelected("");
-    setDraft("");
-    setImages([]);
-    setIsLoadingImages(false);
-  }
-}, [selected, selectedPerson]);
-
-  // LƯU TIN NHẮN
-  const persistMessages = (next) => {
+  const selectConversation = useCallback(async (userId) => {
+    const targetId = String(userId);
+    if (!targetId || targetId === currentUserId) { alert("Không thể mở cuộc trò chuyện với tài khoản này."); return; }
     try {
-      localStorage.setItem(
-        storeKey,
-        JSON.stringify(next)
-      );
-
-      setMessages(next);
-
-      window.dispatchEvent(
-        new Event(MESSAGE_EVENT)
-      );
-
-      return true;
-    } catch {
-      alert(
-        "Không thể lưu tin nhắn. Bộ nhớ trình duyệt có thể đã đầy!"
-      );
-
-      return false;
+      const item = await openDirectConversation(targetId);
+      setConversations((current) => [item, ...current.filter((entry) => String(entry.id) !== String(item.id))]);
+      setSelected(String(item.id));
+      setDraft(""); setImages([]); setSearchText("");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!requestedUser && !requestedUserId) return;
+    let active = true;
+    const open = async () => {
+      let target = requestedUserId;
+      let lookupFailed = false;
+      if (!target) {
+        try {
+          const page = await searchUsers(requestedUser, { page: 0, size: 20 });
+          const person = pageContent(page).find((item) =>
+            normalizeText(item.fullName) === normalizeText(requestedUser) ||
+            normalizeText(item.username) === normalizeText(requestedUser)
+          );
+          target = person?.id;
+        } catch (error) {
+          lookupFailed = true;
+          if (active) setLoadError(getApiErrorMessage(error));
+        }
+      }
+      if (!active) return;
+      if (target) await selectConversation(target);
+      else if (!lookupFailed) setLoadError("Không tìm thấy người dùng để mở hội thoại.");
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("user"); nextParams.delete("userId");
+      setSearchParams(nextParams, { replace: true });
+    };
+    open();
+    return () => { active = false; };
+  }, [requestedUser, requestedUserId, searchParams, selectConversation, setSearchParams]);
+
+  const addConversation = async (event) => {
+    event.preventDefault();
+    if (!newContact) return;
+    await selectConversation(newContact);
+    setNewContact(""); setShowNewChat(false);
   };
 
-  // LƯU CUỘC TRÒ CHUYỆN
-const persistConversations = (next) => {
-  const success = saveAccountData(
-    conversationsKey,
-    next,
-    currentUserId
-  );
 
-  if (!success) {
-    alert("Không thể lưu cuộc trò chuyện!");
-    return false;
-  }
-
-  setSavedConversations(next);
-
-  window.dispatchEvent(
-    new Event(MESSAGE_EVENT)
-  );
-
-  return true;
-};
-
-// CHỌN CUỘC TRÒ CHUYỆN
-const selectConversation = (userId) => {
-  const targetId = String(userId);
-
-  if (!canChatWith(targetId)) {
-    alert("Không thể trò chuyện với người dùng này!");
-    return;
-  }
-
-  if (targetId !== selected) {
-    imageReadVersion.current += 1;
-
-    setDraft("");
-    setImages([]);
-    setIsLoadingImages(false);
-  }
-
-  setSelected(targetId);
-};
-
-// TỰ ĐỘNG MỞ CUỘC TRÒ CHUYỆN TỪ BẢNG TIN
-useEffect(() => {
-  if (!requestedUser && !requestedUserId) {
-    return;
-  }
-
-  const person = requestedUserId
-    ? contacts.find(
-        (item) => item.id === requestedUserId
-      )
-    : contacts.find(
-        (item) =>
-          normalizeText(item.name) ===
-            normalizeText(requestedUser) ||
-          normalizeText(item.username) ===
-            normalizeText(requestedUser) ||
-          normalizeText(
-            getAccountById(item.id)?.fullName
-          ) === normalizeText(requestedUser)
-      );
-
-  if (person) {
-    selectConversation(person.id);
-    setSearchText("");
-    setShowNewChat(false);
-  } else {
-    alert("Không thể mở cuộc trò chuyện này!");
-  }
-
-  const nextParams = new URLSearchParams(searchParams);
-
-  nextParams.delete("user");
-  nextParams.delete("userId");
-
-  setSearchParams(nextParams, {
-    replace: true,
-  });
-}, [requestedUser, requestedUserId]);
-
-// TẠO CUỘC TRÒ CHUYỆN
-const addConversation = (event) => {
-  event.preventDefault();
-
-  const targetId = String(newContact);
-
-  const person = contacts.find(
-    (item) => item.id === targetId
-  );
-
-  if (!person || !canChatWith(targetId)) {
-    alert("Vui lòng chọn người dùng hợp lệ!");
-    return;
-  }
-
-  const current = readConversations().map(String);
-
-  if (!current.includes(targetId)) {
-    const success = persistConversations([
-      targetId,
-      ...current,
-    ]);
-
-    if (!success) return;
-  }
-
-  selectConversation(targetId);
-
-  setNewContact("");
-  setShowNewChat(false);
-  setSearchText("");
-};
-  // ĐÓNG POPUP TẠO NHÓM
-const closeGroupModal = () => {
-  setShowNewGroup(false);
-  setGroupName("");
-  setGroupMembers([]);
-};
-
-// CHỌN THÀNH VIÊN NHÓM
-const toggleGroupMember = (name) => {
-  setGroupMembers((current) =>
-    current.includes(name)
-      ? current.filter((item) => item !== name)
-      : [...current, name]
-  );
-};
-
-// TẠO NHÓM DEMO
-const handleCreateGroup = (event) => {
-  event.preventDefault();
-
-  const name = groupName.trim();
-
-  if (!name) {
-    alert("Vui lòng nhập tên nhóm!");
-    return;
-  }
-
-  if (
-  !isUser(getCurrentAccount()) ||
-  !groupMembers.every((id) => canChatWith(id))
-) {
-  alert("Danh sách thành viên không hợp lệ!");
-  return;
-}
-
-if (groupMembers.length < 2) {
-    alert("Vui lòng chọn ít nhất 2 thành viên!");
-    return;
-  }
-
-  alert(
-    "Thông tin nhóm hợp lệ. Chức năng chat nhóm sẽ được phát triển sau."
-  );
-
-  closeGroupModal();
-};
-
-  // CHỌN ẢNH
   const chooseImages = async (event) => {
-    const files = Array.from(
-      event.target.files || []
-    );
-
+    const file = event.target.files?.[0];
     event.target.value = "";
-
-    if (!files.length || isLoadingImages) return;
-
-    const valid = files.filter(
-      (file) =>
-        file.type.startsWith("image/") &&
-        file.size <= 5 * 1024 * 1024
-    );
-
-    if (valid.length !== files.length) {
-      alert("Chỉ chọn ảnh hợp lệ, mỗi ảnh tối đa 5MB!");
-    }
-
-    const remaining = 10 - images.length;
-
-    if (remaining <= 0) {
-      alert("Bạn chỉ được gửi tối đa 10 ảnh!");
-      return;
-    }
-
-    if (valid.length > remaining) {
-      alert("Chỉ có thể thêm tối đa 10 ảnh!");
-    }
-
-    const selectedFiles = valid.slice(0, remaining);
-
-    if (!selectedFiles.length) return;
-
-    const version = ++imageReadVersion.current;
-
+    if (!file || isLoadingImages) return;
+    if (!file.type.startsWith("image/") || file.size > 10 * 1024 * 1024) { alert("Chọn một ảnh tối đa 10MB."); return; }
     setIsLoadingImages(true);
-
     try {
-      const loaded = await Promise.all(
-        selectedFiles.map(
-          (file) =>
-            new Promise((resolve) => {
-              const reader = new FileReader();
+      const data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      setImages([{ name: file.name, data, file }]);
+    } catch { alert("Không thể đọc ảnh đã chọn."); }
+    finally { setIsLoadingImages(false); }
+  };
 
-              reader.onload = () =>
-                resolve({
-                  name: file.name,
-                  data: String(reader.result),
-                });
-
-              reader.onerror = () => resolve(null);
-
-              reader.readAsDataURL(file);
-            })
-        )
-      );
-
-      if (version !== imageReadVersion.current) return;
-
-      setImages((current) =>
-        [...current, ...loaded.filter(Boolean)].slice(0, 10)
-      );
-    } catch {
-      alert("Không thể đọc hình ảnh!");
-    } finally {
-      if (version === imageReadVersion.current) {
-        setIsLoadingImages(false);
-      }
+  const send = async (event) => {
+    event.preventDefault();
+    if (!selected || isLoadingImages) return;
+    const content = draft.trim();
+    const attachment = images[0];
+    if (!content && !attachment) return;
+    if (content.length > 2000) { alert("Tin nhắn không được vượt quá 2000 ký tự!"); return; }
+    try {
+      const result = attachment
+        ? await sendMediaMessage({ conversationId: selected, file: attachment.file, mediaType: "IMAGE", content })
+        : await sendMessage(selected, content);
+      setMessages((current) => [...current, toMessageView(result, currentUserId, selectedPerson?.id)]);
+      setDraft(""); setImages([]);
+      await refreshConversations();
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
- // GỬI TIN NHẮN
-const send = (event) => {
-  event.preventDefault();
-
-  if (!selected || isLoadingImages) return;
-
-  if (!canChatWith(selected)) {
-  alert("Không thể gửi tin nhắn!");
-  return;
-}
-
-  const content = draft.trim();
-
-  if (!content && images.length === 0) {
-    return;
-  }
-
-  if (content.length > 2000) {
-    alert("Tin nhắn không được vượt quá 2000 ký tự!");
-    return;
-  }
-
-  const nextMessage = {
-    id: crypto.randomUUID(),
-
-    senderId: currentUserId,
-    receiverId: String(selected),
-
-    text: content,
-    images,
-    image: images[0]?.data || "",
-
-    recalled: false,
-    deletedBy: [],
-
-    time: new Date().toLocaleTimeString(
-      "vi-VN",
-      {
-        hour: "2-digit",
-        minute: "2-digit",
-      }
-    ),
-
-    createdAt: new Date().toISOString(),
+  const toggleReaction = async (message) => {
+    try {
+      const result = message.currentUserReaction
+        ? await removeMessageReaction(selected, message.id)
+        : await setMessageReaction(selected, message.id, "LIKE");
+      setMessages((current) => current.map((item) => String(item.id) === String(message.id) ? toMessageView(result, currentUserId, selectedPerson?.id) : item));
+    } catch (error) { alert(getApiErrorMessage(error)); }
   };
-
-  const current = readData(storeKey);
-
-if (persistMessages([...current, nextMessage])) {
-
-  // GỬI THÔNG BÁO CHO NGƯỜI NHẬN
-  addNotification({
-    type: "message",
-
-    senderId: nextMessage.senderId,
-    receiverId: nextMessage.receiverId,
-
-    messageId: nextMessage.id,
-
-    message: content
-      ? "đã gửi cho bạn một tin nhắn."
-      : "đã gửi cho bạn hình ảnh.",
-  });
-
-  // XÓA NỘI DUNG SAU KHI GỬI
-  setDraft("");
-  setImages([]);
-}
-};
-
-// THU HỒI TIN NHẮN
-const recall = (id) => {
-  if (!canChatWith(selected)) {
-    return;
-  }
-  const current = readData(storeKey);
-
-  const target = current.find(
-    (message) => message.id === id
-  );
-
-  if (
-    !target ||
-    !isMyMessage(target) ||
-    !belongsToConversation(target, selected) ||
-    isDeletedForMe(target) ||
-    target.recalled
-  ) {
-    return;
-  }
-
-  const confirmed = window.confirm(
-    "Bạn có chắc chắn muốn thu hồi tin nhắn này không?"
-  );
-
-  if (!confirmed) return;
-
-  persistMessages(
-    current.map((message) =>
-      message.id === id
-        ? {
-            ...message,
-            recalled: true,
-            text: "",
-            image: "",
-            images: [],
-            recalledAt: new Date().toISOString(),
-          }
-        : message
-    )
-  );
-};
-
-// XÓA TIN NHẮN
-const remove = (id) => {
-  if (!canChatWith(selected)) {
-    return;
-  }
-  const current = readData(storeKey);
-
-  const target = current.find(
-    (message) => message.id === id
-  );
-
-  if (
-    !target ||
-    !belongsToConversation(target, selected) ||
-    isDeletedForMe(target)
-  ) {
-    return;
-  }
-
-  const confirmed = window.confirm(
-    "Bạn có muốn xóa tin nhắn khỏi hộp thư của mình không?"
-  );
-
-  if (!confirmed) return;
-
-  persistMessages(
-    current.map((message) => {
-      if (message.id !== id) {
-        return message;
-      }
-
-      const deletedBy = Array.isArray(message.deletedBy)
-        ? message.deletedBy.map(String)
-        : [];
-
-      return {
-        ...message,
-        deletedBy: [
-          ...new Set([
-            ...deletedBy,
-            currentUserId,
-          ]),
-        ],
-      };
-    })
-  );
-};
 
   return (
     <Shell
@@ -2541,12 +1573,10 @@ const remove = (id) => {
     <button
       type="button"
       className="message-new-group"
-      onClick={() => {
-        setShowNewChat(false);
-        setShowNewGroup(true);
-      }}
+      disabled
+      title="Backend hiện chưa hỗ trợ hội thoại nhóm"
     >
-      👥 Tạo nhóm
+      👥 Nhóm (chưa hỗ trợ)
     </button>
   </div>
 </div>
@@ -2645,11 +1675,7 @@ const remove = (id) => {
                 <button
                   type="button"
                   key={person.id}
-                  className={
-                    selected === person.id
-                      ? "selected"
-                      : ""
-                  }
+                  className={selected === String(conversationForUser(person.id)?.id || "") ? "selected" : ""}
                   onClick={() =>
                     selectConversation(person.id)
                   }
@@ -2670,7 +1696,9 @@ const remove = (id) => {
 
                   {lastMessage && (
                     <span className="message-contact-time">
-                      {lastMessage.time}
+                      {lastMessage.createdAt
+                        ? new Date(lastMessage.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+                        : ""}
                     </span>
                   )}
                 </button>
@@ -2716,7 +1744,8 @@ const remove = (id) => {
                 ref={messageListRef}
               >
 
-                {conversation.map((message) => {
+        {loadError && <p role="alert">{loadError}</p>}
+        {conversation.map((message) => {
                   const mine = isMyMessage(message);
                   const attachedImages =
                     message.images?.length
@@ -2785,31 +1814,22 @@ const remove = (id) => {
                                 )}
                               </div>
                             )}
+                            {message.video && (
+                              <video className="message-image" src={message.video} controls />
+                            )}
                           </>
                         )}
 
                         <small>{message.time}</small>
 
                         <div className="message-actions">
-                          {mine &&
-                            !message.recalled && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  recall(message.id)
-                                }
-                              >
-                                Thu hồi
-                              </button>
-                            )}
-
                           <button
                             type="button"
-                            onClick={() =>
-                              remove(message.id)
-                            }
+                            aria-pressed={Boolean(message.currentUserReaction)}
+                            onClick={() => toggleReaction(message)}
                           >
-                            Xóa
+                            {message.currentUserReaction ? "♥" : "♡"} Thích
+                            {Object.values(message.reactionCounts || {}).reduce((sum, count) => sum + Number(count || 0), 0) || ""}
                           </button>
                         </div>
                       </div>
@@ -2877,7 +1897,6 @@ const remove = (id) => {
                   <input
                     type="file"
                     accept="image/*"
-                    multiple
                     hidden
                     disabled={isLoadingImages}
                     onChange={chooseImages}
@@ -2906,7 +1925,7 @@ const remove = (id) => {
               </form>
 
               <p className="message-help-text">
-                Tối đa 10 ảnh, mỗi ảnh không quá 5MB.
+                Gửi một ảnh, dung lượng tối đa 10MB.
               </p>
             </>
           ) : (
@@ -2930,107 +1949,6 @@ const remove = (id) => {
           )}
         </div>
       </section>
-      {/* POPUP TẠO NHÓM */}
-{showNewGroup && (
-  <div
-    className="community-modal"
-    onClick={closeGroupModal}
-  >
-    <form
-      className="message-group-modal"
-      onSubmit={handleCreateGroup}
-      onClick={(event) => event.stopPropagation()}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Tạo nhóm trò chuyện"
-    >
-      <div className="message-group-header">
-        <h2>Tạo nhóm trò chuyện</h2>
-
-        <button
-          type="button"
-          aria-label="Đóng"
-          onClick={closeGroupModal}
-        >
-          ✕
-        </button>
-      </div>
-
-      <label htmlFor="group-name">
-        Tên nhóm
-      </label>
-
-      <input
-        id="group-name"
-        autoFocus
-        maxLength={60}
-        placeholder="Nhập tên nhóm..."
-        value={groupName}
-        onChange={(event) =>
-          setGroupName(event.target.value)
-        }
-      />
-
-      <h4>Thêm thành viên</h4>
-
-      <p className="message-group-count">
-        Đã chọn {groupMembers.length} thành viên
-      </p>
-
-      <div className="message-group-members">
-        {contacts.map((person) => (
-          <label
-            key={person.id}
-            className="message-group-member"
-          >
-            <span
-  className={`person-avatar small ${person.color || "blue"}`}
->
-  <ProfileAvatar profile={person} />
-</span>
-
-            <strong>{person.name}</strong>
-
-            <input
-              type="checkbox"
-              checked={groupMembers.includes(
-  person.id
-)}
-              onChange={() =>
-                toggleGroupMember(person.id)
-              }
-            />
-          </label>
-        ))}
-      </div>
-
-      <div className="message-group-note">
-        Chức năng nhắn tin nhóm sẽ được cập nhật sau.
-      </div>
-
-      <div className="message-group-actions">
-        <button
-          type="button"
-          className="message-group-cancel"
-          onClick={closeGroupModal}
-        >
-          Hủy
-        </button>
-
-        <button
-          type="submit"
-          className="message-group-submit"
-          disabled={
-            !groupName.trim() ||
-            groupMembers.length < 2
-          }
-        >
-          Tạo nhóm
-        </button>
-      </div>
-    </form>
-  </div>
-)}
     </Shell>
   );
 }

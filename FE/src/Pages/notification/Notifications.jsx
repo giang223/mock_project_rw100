@@ -1,28 +1,16 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
-  STORAGE_KEY,
   UPDATE_EVENT,
-  getSavedNotifications,
-  markNotificationRead,
-  markAllNotificationsRead,
-  deleteNotification,
-  deleteAllNotifications,
   formatNotificationTime,
 } from "./notificationUtils";
-
-import {
-  ACCOUNT_EVENT,
-  getAccountById,
-  getAccountByName,
-  getCurrentAccount,
-  isUser,
-} from "../../utils/mockAccounts";
-
-const PROFILE_KEY = "miniSocialProfile";
-const PROFILE_EVENT = "miniSocialProfileUpdated";
+import { getCurrentAccount } from "../../utils/mockAccounts";
+import { getApiErrorMessage } from "../../api/http";
+import { pageContent } from "../../api/apiResponse";
+import { toNotificationView } from "../../api/adapters";
+import { getNotifications, getUnreadNotificationCount, markNotificationRead, markAllNotificationsRead, deleteNotification, deleteAllNotifications } from "../../api/notifications";
 
 // TÌM KIẾM KHÔNG PHÂN BIỆT DẤU
 function normalizeText(value) {
@@ -111,9 +99,10 @@ function NotificationAvatar({ avatar, name, color }) {
 }
 
 function Notifications() {
-  const [notifications, setNotifications] = useState(
-    getSavedNotifications
-  );
+  const [notifications, setNotifications] = useState([]);
+  const [unreadTotal, setUnreadTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [activeTab, setActiveTab] = useState("all");
   const [searchText, setSearchText] = useState("");
@@ -123,53 +112,26 @@ function Notifications() {
 
   const navigate = useNavigate();
 
- // ĐỒNG BỘ DỮ LIỆU
+ const refreshNotifications = useCallback(async ({ signalHeader = false } = {}) => {
+   setIsLoading(true);
+   setLoadError("");
+   try {
+     const [page, unreadResponse] = await Promise.all([
+       getNotifications({ page: 0, size: 100 }),
+       getUnreadNotificationCount(),
+     ]);
+     setNotifications(pageContent(page).map(toNotificationView));
+     setUnreadTotal(Number(unreadResponse?.count || 0));
+     if (signalHeader) window.dispatchEvent(new Event(UPDATE_EVENT));
+   } catch (error) {
+     setLoadError(getApiErrorMessage(error));
+   } finally {
+     setIsLoading(false);
+   }
+ }, []);
+
 useEffect(() => {
-  const refreshData = () => {
-    setNotifications(getSavedNotifications());
-  };
-
-  const handleStorage = (event) => {
-    const key = event.key;
-
-    if (
-      key === null ||
-      key === STORAGE_KEY ||
-      key === PROFILE_KEY ||
-      key?.startsWith(`${STORAGE_KEY}_`) ||
-      key?.startsWith(`${PROFILE_KEY}_`)
-    ) {
-      refreshData();
-    }
-  };
-
-  refreshData();
-
-  window.addEventListener(
-    UPDATE_EVENT,
-    refreshData
-  );
-
-  window.addEventListener(
-    PROFILE_EVENT,
-    refreshData
-  );
-
-  window.addEventListener(
-    ACCOUNT_EVENT,
-    refreshData
-  );
-
-  window.addEventListener(
-    "storage",
-    handleStorage
-  );
-
-  window.addEventListener(
-    "focus",
-    refreshData
-  );
-
+  refreshNotifications();
   // CẬP NHẬT THỜI GIAN MỖI PHÚT
   const timer = setInterval(() => {
     setClock((previous) => previous + 1);
@@ -177,43 +139,14 @@ useEffect(() => {
 
   return () => {
     clearInterval(timer);
-
-    window.removeEventListener(
-      UPDATE_EVENT,
-      refreshData
-    );
-
-    window.removeEventListener(
-      PROFILE_EVENT,
-      refreshData
-    );
-
-    window.removeEventListener(
-      ACCOUNT_EVENT,
-      refreshData
-    );
-
-    window.removeEventListener(
-      "storage",
-      handleStorage
-    );
-
-    window.removeEventListener(
-      "focus",
-      refreshData
-    );
   };
-}, []);
+}, [refreshNotifications]);
 
  // KIỂM TRA NGƯỜI GỬI LÀ TÀI KHOẢN HIỆN TẠI
 const isCurrentUser = (item) => {
   const account = getCurrentAccount();
 
-  return Boolean(
-    account &&
-    item.senderId != null &&
-    String(item.senderId) === String(account.id)
-  );
+  return Boolean(account && item.senderId != null && String(item.senderId) === String(account.id));
 };
 
 // HIỂN THỊ TÊN NGƯỜI GỬI
@@ -237,12 +170,8 @@ const getAvatar = (item) => {
   };
 
   // ĐẾM THÔNG BÁO
-  const unreadCount = notifications.filter(
-    (item) => !item.read
-  ).length;
-
-  const readCount =
-    notifications.length - unreadCount;
+  const unreadCount = unreadTotal;
+  const readCount = notifications.filter((item) => item.read).length;
 
   // LỌC VÀ TÌM KIẾM THÔNG BÁO
   const filteredNotifications =
@@ -299,39 +228,38 @@ if (activeType === "friend") {
     });
 
   // KIỂM TRA KẾT QUẢ LƯU
-  const checkResult = (success) => {
-    if (!success) {
-      alert("Không thể cập nhật thông báo!");
-    }
-
-    return success;
-  };
-
   // ĐÁNH DẤU ĐÃ ĐỌC
-  const handleMarkRead = (id) => {
-    return checkResult(
-      markNotificationRead(id)
-    );
+  const handleMarkRead = async (id) => {
+    try {
+      await markNotificationRead(id);
+      await refreshNotifications({ signalHeader: true });
+      return true;
+    } catch (error) {
+      alert(getApiErrorMessage(error));
+      return false;
+    }
   };
 
   // ĐÁNH DẤU TẤT CẢ ĐÃ ĐỌC
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
     if (unreadCount === 0) return;
 
-    checkResult(
-      markAllNotificationsRead()
-    );
+    try {
+      await markAllNotificationsRead();
+      await refreshNotifications({ signalHeader: true });
+    } catch (error) { alert(getApiErrorMessage(error)); }
   };
 
   // XÓA MỘT THÔNG BÁO
-  const handleDelete = (id) => {
-    checkResult(
-      deleteNotification(id)
-    );
+  const handleDelete = async (id) => {
+    try {
+      await deleteNotification(id);
+      await refreshNotifications({ signalHeader: true });
+    } catch (error) { alert(getApiErrorMessage(error)); }
   };
 
   // XÓA TẤT CẢ THÔNG BÁO
-  const handleDeleteAll = () => {
+  const handleDeleteAll = async () => {
     if (notifications.length === 0) return;
 
     const confirmed = window.confirm(
@@ -340,31 +268,25 @@ if (activeType === "friend") {
 
     if (!confirmed) return;
 
-    checkResult(
-      deleteAllNotifications()
-    );
+    try {
+      await deleteAllNotifications();
+      await refreshNotifications({ signalHeader: true });
+    } catch (error) { alert(getApiErrorMessage(error)); }
   };
 
 // MỞ THÔNG BÁO
-const handleOpenNotification = (item) => {
+const handleOpenNotification = async (item) => {
   const account = getCurrentAccount();
 
   // KIỂM TRA QUYỀN USER
-  if (!item || !isUser(account)) {
+  if (!item || account?.role !== "USER") {
     return;
   }
 
   // KIỂM TRA NGƯỜI NHẬN THÔNG BÁO
-  if (
-    item.receiverId != null &&
-    String(item.receiverId) !== String(account.id)
-  ) {
-    return;
-  }
-
   // ĐÁNH DẤU ĐÃ ĐỌC
   if (!item.read) {
-    const success = handleMarkRead(item.id);
+    const success = await handleMarkRead(item.id);
 
     if (!success) return;
   }
@@ -378,15 +300,7 @@ const handleOpenNotification = (item) => {
   }
 
   // TÌM TÀI KHOẢN NGƯỜI GỬI
-  const sender =
-    item.senderId != null
-      ? getAccountById(item.senderId)
-      : getAccountByName(item.name);
-
-  // KHÔNG CHUYỂN HƯỚNG ĐẾN ADMIN
-  if (sender && !isUser(sender)) {
-    return;
-  }
+  const senderId = item.senderId;
 
   // THÔNG BÁO TƯƠNG TÁC BÀI VIẾT
   const isPostInteraction = [
@@ -409,12 +323,9 @@ const handleOpenNotification = (item) => {
 
   // THÔNG BÁO TIN NHẮN
   if (item.type === "message") {
-    if (
-      isUser(sender) &&
-      String(sender.id) !== String(account.id)
-    ) {
+    if (senderId && String(senderId) !== String(account.id)) {
       navigate(
-        `/messages?userId=${sender.id}`
+        `/messages?userId=${senderId}`
       );
     }
 
@@ -428,9 +339,9 @@ const handleOpenNotification = (item) => {
   }
 
   // MỞ TRANG CÁ NHÂN NGƯỜI GỬI
-  if (isUser(sender)) {
+  if (senderId) {
     navigate(
-      `/profile?userId=${sender.id}`
+      `/profile?userId=${senderId}`
     );
 
     return;
@@ -459,6 +370,9 @@ const handleOpenNotification = (item) => {
 
   return (
     <div className="notifications-page">
+
+      {loadError && <p role="alert" className="profile-field-error">{loadError}</p>}
+      {isLoading && <p role="status">Đang tải thông báo…</p>}
 
       {/* HEADER */}
       <header className="notifications-header">

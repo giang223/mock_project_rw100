@@ -1,3 +1,5 @@
+import { getSession } from "../api/sessionStore";
+
 // DANH SÁCH TÀI KHOẢN MOCK
 export const MOCK_ACCOUNTS = [
     {
@@ -84,6 +86,23 @@ export const MOCK_PASSWORD = "Demo@123";
 export const CURRENT_ACCOUNT_KEY = "miniSocialCurrentAccount";
 
 export const ACCOUNT_EVENT = "miniSocialAccountUpdated";
+const DEMO_AUTH_ENABLED = import.meta.env.VITE_DEMO_AUTH_ENABLED === "true";
+
+function mapAuthenticatedUser(user) {
+    const gender = { MALE: "Nam", FEMALE: "Nữ", OTHER: "Khác" }[user.gender] || "";
+    return {
+        ...user,
+        id: user.id,
+        backendId: user.id,
+        username: user.username || user.email?.split("@")[0] || "user",
+        avatar: user.avatarUrl || "",
+        color: "blue",
+        gender,
+        bio: user.bio || "",
+        cover: user.coverUrl || "",
+        isPrivate: Boolean(user.isPrivate),
+    };
+}
 
 // LẤY DANH SÁCH TÀI KHOẢN
 export function getMockAccounts() {
@@ -119,6 +138,10 @@ export function getAccountByName(name) {
 
 // LẤY TÀI KHOẢN ĐANG ĐĂNG NHẬP
 export function getCurrentAccount() {
+    const authenticatedUser = getSession()?.user;
+    if (authenticatedUser) return mapAuthenticatedUser(authenticatedUser);
+    if (!DEMO_AUTH_ENABLED) return null;
+
     try {
         const id = sessionStorage.getItem(CURRENT_ACCOUNT_KEY);
 
@@ -130,6 +153,7 @@ export function getCurrentAccount() {
 
 // LƯU TÀI KHOẢN ĐANG ĐĂNG NHẬP
 export function setCurrentAccount(id) {
+    if (!DEMO_AUTH_ENABLED) return false;
     const account = getAccountById(id);
 
     if (!account) return false;
@@ -147,6 +171,9 @@ export function setCurrentAccount(id) {
 
 // ĐĂNG NHẬP MOCK
 export function loginMockAccount(email, password) {
+    if (!DEMO_AUTH_ENABLED) {
+        return { success: false, message: "Đăng nhập demo đang bị tắt." };
+    }
     const account = getAccountByEmail(email);
 
     if (!account || password !== MOCK_PASSWORD) {
@@ -176,9 +203,14 @@ export function switchMockAccount(id) {
 
 // ĐĂNG XUẤT
 export function logoutMockAccount() {
-    sessionStorage.removeItem(CURRENT_ACCOUNT_KEY);
-
-    window.dispatchEvent(new Event(ACCOUNT_EVENT));
+    try {
+        sessionStorage.removeItem(CURRENT_ACCOUNT_KEY);
+    } catch {
+        // Keep logout usable when browser storage is unavailable.
+    }
+    if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(ACCOUNT_EVENT));
+    }
 }
 
 // TẠO KEY DỮ LIỆU RIÊNG CHO TỪNG TÀI KHOẢN

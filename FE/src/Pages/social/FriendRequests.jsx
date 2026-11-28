@@ -1,22 +1,10 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ACCOUNT_EVENT,
-} from "../../utils/mockAccounts";
-
-import {
-  FRIEND_EVENT,
-  BLOCKED_EVENT,
-  getMyFriendRequests,
-  acceptFriendRequest,
-  rejectFriendRequest,
-  cancelFriendRequest,
-  unfriendUser,
-} from "../../utils/friendUtils";
-
-const PROFILE_EVENT =
-  "miniSocialProfileUpdated";
+import { getApiErrorMessage } from "../../api/http";
+import { pageContent } from "../../api/apiResponse";
+import { toFriendView } from "../../api/adapters";
+import { getFriends, getReceivedFriendRequests, getSentFriendRequests, acceptFriendRequest, rejectFriendRequest, cancelFriendRequest, unfriend } from "../../api/friends";
 
 // CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
 function normalizeText(value) {
@@ -29,9 +17,9 @@ function normalizeText(value) {
 }
 
 function FriendRequests() {
-  const [requests, setRequests] = useState(
-    getMyFriendRequests
-  );
+  const [requests, setRequests] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [activeTab, setActiveTab] =
     useState("received");
@@ -39,67 +27,49 @@ function FriendRequests() {
   const [searchValue, setSearchValue] =
     useState("");
 
-  // ĐỒNG BỘ DỮ LIỆU
-  useEffect(() => {
-    const refreshData = () => {
-      setRequests(getMyFriendRequests());
-    };
-
-    refreshData();
-
-    const events = [
-      FRIEND_EVENT,
-      BLOCKED_EVENT,
-      ACCOUNT_EVENT,
-      PROFILE_EVENT,
-      "storage",
-      "focus",
-    ];
-
-    events.forEach((event) => {
-      window.addEventListener(
-        event,
-        refreshData
-      );
-    });
-
-    return () => {
-      events.forEach((event) => {
-        window.removeEventListener(
-          event,
-          refreshData
-        );
-      });
-    };
+  const refreshRequests = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const [receivedPage, sentPage, friendsPage] = await Promise.all([
+        getReceivedFriendRequests({ page: 0, size: 100 }),
+        getSentFriendRequests({ page: 0, size: 100 }),
+        getFriends({ page: 0, size: 100 }),
+      ]);
+      setRequests([
+        ...pageContent(receivedPage).map((item) => toFriendView(item, "received")),
+        ...pageContent(sentPage).map((item) => toFriendView(item, "sent")),
+        ...pageContent(friendsPage).map((item) => toFriendView(item, "accepted")),
+      ].filter(Boolean));
+    } catch (error) {
+      setLoadError(getApiErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    refreshRequests();
+  }, [refreshRequests]);
+
   // CHẤP NHẬN LỜI MỜI
-  const handleAccept = (id) => {
-    const request = getMyFriendRequests().find(
-      (item) =>
-        item.id === id &&
-        item.status === "received"
-    );
-
+  const handleAccept = async (requestId) => {
+    const request = requests.find((item) => item.friendshipId === requestId && item.status === "received");
     if (!request) return;
-
-    if (acceptFriendRequest(id)) {
+    try {
+      await acceptFriendRequest(requestId);
+      await refreshRequests();
       alert(
         `Bạn và ${request.name} đã trở thành bạn bè!`
       );
-    } else {
-      alert("Không thể chấp nhận lời mời!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
   // TỪ CHỐI LỜI MỜI
-  const handleReject = (id) => {
-    const request = getMyFriendRequests().find(
-      (item) =>
-        item.id === id &&
-        item.status === "received"
-    );
-
+  const handleReject = async (requestId) => {
+    const request = requests.find((item) => item.friendshipId === requestId && item.status === "received");
     if (!request) return;
 
     const confirmed = window.confirm(
@@ -108,23 +78,20 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    if (rejectFriendRequest(id)) {
+    try {
+      await rejectFriendRequest(requestId);
+      await refreshRequests();
       alert(
         `Đã từ chối lời mời của ${request.name}.`
       );
-    } else {
-      alert("Không thể từ chối lời mời!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
   // HỦY LỜI MỜI ĐÃ GỬI
-  const handleCancel = (id) => {
-    const request = getMyFriendRequests().find(
-      (item) =>
-        item.id === id &&
-        item.status === "sent"
-    );
-
+  const handleCancel = async (requestId) => {
+    const request = requests.find((item) => item.friendshipId === requestId && item.status === "sent");
     if (!request) return;
 
     const confirmed = window.confirm(
@@ -133,23 +100,20 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    if (cancelFriendRequest(id)) {
+    try {
+      await cancelFriendRequest(requestId);
+      await refreshRequests();
       alert(
         `Đã hủy lời mời gửi đến ${request.name}.`
       );
-    } else {
-      alert("Không thể hủy lời mời!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
   // HỦY KẾT BẠN
-  const handleUnfriend = (id) => {
-    const request = getMyFriendRequests().find(
-      (item) =>
-        item.id === id &&
-        item.status === "accepted"
-    );
-
+  const handleUnfriend = async (friendId) => {
+    const request = requests.find((item) => String(item.id) === String(friendId) && item.status === "accepted");
     if (!request) return;
 
     const confirmed = window.confirm(
@@ -158,12 +122,14 @@ function FriendRequests() {
 
     if (!confirmed) return;
 
-    if (unfriendUser(id)) {
+    try {
+      await unfriend(friendId);
+      await refreshRequests();
       alert(
         `Đã hủy kết bạn với ${request.name}.`
       );
-    } else {
-      alert("Không thể hủy kết bạn!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
@@ -266,6 +232,8 @@ function FriendRequests() {
             bạn bè của bạn.
           </p>
         </div>
+        {loadError && <p role="alert" className="profile-field-error">{loadError}</p>}
+        {isLoading && <p role="status">Đang tải danh sách bạn bè…</p>}
 
         {/* ĐIỀU HƯỚNG BẠN BÈ */}
 <nav
@@ -408,7 +376,7 @@ function FriendRequests() {
                 return (
                   <div
                     className="friend-request-card"
-                    key={request.id}
+                    key={request.friendshipId || request.id}
                   >
                     {/* AVATAR */}
                     <Link
@@ -476,7 +444,7 @@ function FriendRequests() {
                             type="button"
                             className="friend-accept-button"
                             onClick={() =>
-                              handleAccept(request.id)
+                              handleAccept(request.friendshipId)
                             }
                           >
                             Chấp nhận
@@ -486,7 +454,7 @@ function FriendRequests() {
                             type="button"
                             className="friend-reject-button"
                             onClick={() =>
-                              handleReject(request.id)
+                              handleReject(request.friendshipId)
                             }
                           >
                             Từ chối
@@ -500,7 +468,7 @@ function FriendRequests() {
                           type="button"
                           className="friend-cancel-button"
                           onClick={() =>
-                            handleCancel(request.id)
+                              handleCancel(request.friendshipId)
                           }
                         >
                           Hủy lời mời

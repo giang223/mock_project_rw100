@@ -1,26 +1,10 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ACCOUNT_EVENT,
-  getCurrentAccount,
-  getMockUsers,
-  getAccountById,
-  isUser,
-} from "../../utils/mockAccounts";
-
-import {
-  FRIEND_EVENT,
-  BLOCKED_EVENT,
-  getFriendProfile,
-  getFriendStatus,
-  getMutualFriends,
-  getRelationship,
-  sendFriendRequest,
-  cancelFriendRequest,
-} from "../../utils/friendUtils";
-
-const PROFILE_EVENT = "miniSocialProfileUpdated";
+import { getApiErrorMessage } from "../../api/http";
+import { pageContent } from "../../api/apiResponse";
+import { toUserView } from "../../api/adapters";
+import { getFriendSuggestions, getSentFriendRequests, sendFriendRequest, cancelFriendRequest } from "../../api/friends";
 
 // CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
 function normalizeText(value) {
@@ -32,92 +16,33 @@ function normalizeText(value) {
     .trim();
 }
 
-// LẤY DANH SÁCH GỢI Ý KẾT BẠN
-function readSuggestions() {
-  const account = getCurrentAccount();
-
-  // CHỈ USER ĐƯỢC SỬ DỤNG CHỨC NĂNG KẾT BẠN
-  if (!isUser(account)) return [];
-
-  return getMockUsers()
-    .filter(
-      (user) =>
-        String(user.id) !== String(account.id)
-    )
-    .map((user) => {
-      const profile = getFriendProfile(user.id);
-
-      if (!profile) return null;
-
-      const status = getFriendStatus(user.id);
-
-      return {
-        id: user.id,
-        name: profile.fullName,
-        username: profile.username,
-        avatar: profile.avatar || "",
-        bio: profile.bio || "",
-        color: profile.color || "blue",
-
-        status,
-
-        mutualFriends: getMutualFriends(
-          account.id,
-          user.id
-        ),
-      };
-    })
-    .filter(Boolean)
-    .filter(
-      (user) =>
-        ["none", "sent"].includes(user.status)
-    )
-    .sort(
-      (a, b) =>
-        b.mutualFriends - a.mutualFriends
-    );
-}
-
 function FriendSuggestions() {
-  const [suggestedUsers, setSuggestedUsers] =
-    useState(readSuggestions);
+  const [suggestedUsers, setSuggestedUsers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [searchValue, setSearchValue] =
     useState("");
 
-  // ĐỒNG BỘ DỮ LIỆU
-  useEffect(() => {
-    const refreshData = () => {
-      setSuggestedUsers(readSuggestions());
-    };
-
-    refreshData();
-
-    const events = [
-      FRIEND_EVENT,
-      BLOCKED_EVENT,
-      ACCOUNT_EVENT,
-      PROFILE_EVENT,
-      "storage",
-      "focus",
-    ];
-
-    events.forEach((event) => {
-      window.addEventListener(
-        event,
-        refreshData
-      );
-    });
-
-    return () => {
-      events.forEach((event) => {
-        window.removeEventListener(
-          event,
-          refreshData
-        );
-      });
-    };
+  const refreshSuggestions = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const page = await getFriendSuggestions({ page: 0, size: 100 });
+      setSuggestedUsers(pageContent(page).map((raw) => {
+        const user = toUserView(raw);
+        return { ...user, name: user.fullName, avatar: user.avatar, color: "blue", status: String(raw.friendshipStatus || "none").toLowerCase(), mutualFriends: Number(raw.mutualFriendCount || 0) };
+      }));
+    } catch (error) {
+      setLoadError(getApiErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    refreshSuggestions();
+  }, [refreshSuggestions]);
 
   // LỌC VÀ SẮP XẾP GỢI Ý
   const filteredSuggestions = useMemo(() => {
@@ -136,91 +61,35 @@ function FriendSuggestions() {
   }, [suggestedUsers, searchValue]);
 
   // GỬI LỜI MỜI KẾT BẠN
-  const handleSendRequest = (user) => {
-    const account = getCurrentAccount();
-
-    if (!isUser(account)) {
-  alert("Bạn không có quyền thực hiện chức năng này!");
-  return;
-}
-
-if (!isUser(getAccountById(user.id))) {
-  alert("Tài khoản người dùng không hợp lệ!");
-  setSuggestedUsers(readSuggestions());
-  return;
-}
-
-    const status = getFriendStatus(user.id);
-
-    if (status === "blocked") {
-      alert("Không thể kết bạn với người dùng này!");
-      return;
-    }
-
-    if (status !== "none") {
-      alert(
-        "Đã tồn tại lời mời hoặc quan hệ bạn bè!"
-      );
-
-      setSuggestedUsers(readSuggestions());
-      return;
-    }
-
-    if (sendFriendRequest(user.id)) {
-      setSuggestedUsers(readSuggestions());
-
+  const handleSendRequest = async (user) => {
+    try {
+      await sendFriendRequest(user.id);
+      await refreshSuggestions();
       alert(
         `Đã gửi lời mời kết bạn đến ${user.name}!`
       );
-    } else {
-      alert("Không thể gửi lời mời kết bạn!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
   // HỦY LỜI MỜI KẾT BẠN
-  const handleCancelRequest = (user) => {
-    const account = getCurrentAccount();
-
-    if (!isUser(account)) {
-  alert("Bạn không có quyền thực hiện chức năng này!");
-  return;
-}
-
-if (!isUser(getAccountById(user.id))) {
-  alert("Tài khoản người dùng không hợp lệ!");
-  setSuggestedUsers(readSuggestions());
-  return;
-}
-
-    const relationship = getRelationship(
-      account.id,
-      user.id
-    );
-
-    if (
-      !relationship ||
-      relationship.status !== "pending" ||
-      String(relationship.senderId) !==
-        String(account.id)
-    ) {
-      alert("Lời mời không còn tồn tại!");
-
-      setSuggestedUsers(readSuggestions());
-      return;
-    }
-
+  const handleCancelRequest = async (user) => {
     const confirmed = window.confirm(
       `Bạn có chắc muốn hủy lời mời kết bạn với ${user.name}?`
     );
 
     if (!confirmed) return;
 
-    if (cancelFriendRequest(relationship.id)) {
-      setSuggestedUsers(readSuggestions());
-
+    try {
+      const page = await getSentFriendRequests({ page: 0, size: 100 });
+      const request = pageContent(page).find((item) => String(item.user?.id) === String(user.id));
+      if (!request) throw new Error("Lời mời không còn tồn tại.");
+      await cancelFriendRequest(request.id);
+      await refreshSuggestions();
       alert("Đã hủy lời mời kết bạn.");
-    } else {
-      alert("Không thể hủy lời mời kết bạn!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
@@ -301,6 +170,8 @@ if (!isUser(getAccountById(user.id))) {
 
         {/* DANH SÁCH GỢI Ý */}
         <section className="friend-suggestions-content">
+          {loadError && <p role="alert" className="profile-field-error">{loadError}</p>}
+          {isLoading && <p role="status">Đang tải gợi ý…</p>}
           <div className="friend-suggestions-title">
             <h2>Những người bạn có thể biết</h2>
 
@@ -309,7 +180,7 @@ if (!isUser(getAccountById(user.id))) {
             </span>
           </div>
 
-          {filteredSuggestions.length === 0 ? (
+          {!isLoading && filteredSuggestions.length === 0 ? (
             <div className="friend-suggestions-empty">
               <div>👥</div>
 

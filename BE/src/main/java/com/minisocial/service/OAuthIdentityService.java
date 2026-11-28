@@ -7,6 +7,7 @@ import com.minisocial.repository.OAuthIdentityRepository;
 import com.minisocial.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import java.util.Base64;
 import java.util.Locale;
 
 @Service
+@ConditionalOnProperty(prefix = "app.auth.oauth", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class OAuthIdentityService {
 

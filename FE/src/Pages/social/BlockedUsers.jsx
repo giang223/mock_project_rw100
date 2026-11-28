@@ -1,80 +1,10 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  ACCOUNT_EVENT,
-  getCurrentAccount,
-  getAccountById,
-  readAccountData,
-  saveAccountData,
-  isUser,
-} from "../../utils/mockAccounts";
-
-import {
-  BLOCKED_KEY,
-  BLOCKED_EVENT,
-  FRIEND_EVENT,
-  getFriendProfile,
-  removeRelationshipWith,
-} from "../../utils/friendUtils";
-
-const PROFILE_EVENT = "miniSocialProfileUpdated";
-
-// ĐỌC DỮ LIỆU CHẶN GỐC
-function readRawBlockedUsers() {
-  const account = getCurrentAccount();
-
-  if (!isUser(account)) return [];
-
-  const data = readAccountData(
-    BLOCKED_KEY,
-    [],
-    account.id
-  );
-
-  return Array.isArray(data) ? data : [];
-}
-
-// ĐỌC DANH SÁCH NGƯỜI DÙNG ĐÃ CHẶN
-function readBlockedUsers() {
-  const account = getCurrentAccount();
-
-  if (!isUser(account)) return [];
-
-  return readRawBlockedUsers()
-    .filter((item) => {
-      if (
-        !item ||
-        typeof item !== "object" ||
-        Array.isArray(item)
-      ) {
-        return false;
-      }
-
-      const userId = item.userId ?? item.id;
-      const target = getAccountById(userId);
-
-      return (
-        isUser(target) &&
-        String(target.id) !== String(account.id)
-      );
-    })
-    .map((item) => {
-      const userId = item.userId ?? item.id;
-
-      const profile = getFriendProfile(userId);
-
-      return {
-        ...item,
-        userId,
-        name: profile?.fullName || item.name,
-        username: profile?.username || item.username,
-        avatar: profile?.avatar ?? item.avatar ?? "",
-        color: profile?.color || item.color || "blue",
-        bio: profile?.bio ?? item.bio ?? "",
-      };
-    });
-}
+import { getApiErrorMessage } from "../../api/http";
+import { pageContent } from "../../api/apiResponse";
+import { toUserView } from "../../api/adapters";
+import { getBlockedUsers, unblockUser } from "../../api/users";
 
 // CHUYỂN TIẾNG VIỆT THÀNH KHÔNG DẤU
 function normalizeText(value) {
@@ -84,24 +14,6 @@ function normalizeText(value) {
     .replace(/đ/gi, "d")
     .toLowerCase()
     .trim();
-}
-
-// SO SÁNH NGƯỜI DÙNG
-function isSameUser(first, second) {
-  if (!first || !second) return false;
-
-  const firstId = first.userId ?? first.id;
-  const secondId = second.userId ?? second.id;
-
-  if (firstId != null && secondId != null) {
-    return String(firstId) === String(secondId);
-  }
-
-  return Boolean(
-    first.username &&
-    second.username &&
-    first.username === second.username
-  );
 }
 
 // ĐỊNH DẠNG NGÀY CHẶN
@@ -122,81 +34,28 @@ function formatBlockedDate(value) {
 }
 
 function BlockedUsers() {
-  const [blockedUsers, setBlockedUsers] = useState(
-    readBlockedUsers
-  );
-
+  const [blockedUsers, setBlockedUsers] = useState([]);
   const [searchValue, setSearchValue] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
- // ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
-useEffect(() => {
-  const refreshData = () => {
-    setBlockedUsers(readBlockedUsers());
-  };
+  const refreshBlockedUsers = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const page = await getBlockedUsers({ page: 0, size: 100 });
+      setBlockedUsers(pageContent(page).map((raw) => {
+        const user = toUserView(raw);
+        return { ...user, userId: user.id, name: user.fullName, color: "blue" };
+      }));
+    } catch (error) {
+      setLoadError(getApiErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
-  refreshData();
-
-  const events = [
-    ACCOUNT_EVENT,
-    PROFILE_EVENT,
-    FRIEND_EVENT,
-    BLOCKED_EVENT,
-    "storage",
-    "focus",
-  ];
-
-  events.forEach((event) => {
-    window.addEventListener(
-      event,
-      refreshData
-    );
-  });
-
-  return () => {
-    events.forEach((event) => {
-      window.removeEventListener(
-        event,
-        refreshData
-      );
-    });
-  };
-}, []);
-
-  // LƯU DANH SÁCH ĐÃ CHẶN
-const saveBlockedUsers = (nextUsers) => {
-  const account = getCurrentAccount();
-
-  if (!isUser(account)) {
-    alert("Bạn không có quyền thực hiện thao tác này!");
-    return false;
-  }
-
-  if (!Array.isArray(nextUsers)) {
-    return false;
-  }
-
-  const success = saveAccountData(
-    BLOCKED_KEY,
-    nextUsers,
-    account.id
-  );
-
-  if (!success) {
-    alert(
-      "Không thể lưu dữ liệu. Vui lòng thử lại!"
-    );
-
-    return false;
-  }
-
-  setBlockedUsers(readBlockedUsers());
-
-  window.dispatchEvent(
-    new Event(BLOCKED_EVENT)
-  );
-
-  return true;
-};
+  useEffect(() => { refreshBlockedUsers(); }, [refreshBlockedUsers]);
 
   // TÌM KIẾM NGƯỜI DÙNG
   const filteredUsers = useMemo(() => {
@@ -212,26 +71,7 @@ const saveBlockedUsers = (nextUsers) => {
   }, [blockedUsers, searchValue]);
 
   // BỎ CHẶN MỘT NGƯỜI
-const handleUnblock = (user) => {
-  const account = getCurrentAccount();
-
-  if (!isUser(account)) {
-    alert("Bạn không có quyền bỏ chặn!");
-    return;
-  }
-
-  const target = getAccountById(
-    user.userId ?? user.id
-  );
-
-  if (
-    !isUser(target) ||
-    String(target.id) === String(account.id)
-  ) {
-    alert("Tài khoản không hợp lệ!");
-    return;
-  }
-
+const handleUnblock = async (user) => {
   const displayName =
     user.name ||
     user.username ||
@@ -243,44 +83,18 @@ const handleUnblock = (user) => {
 
   if (!confirmed) return;
 
-  const currentUsers = readBlockedUsers();
-
-  const blockedUser = currentUsers.find(
-    (item) => isSameUser(item, user)
-  );
-
-  if (!blockedUser) {
-    setBlockedUsers(currentUsers);
-    alert("Người dùng này đã được bỏ chặn!");
-    return;
-  }
-
-  // KHÔNG KHÔI PHỤC QUAN HỆ BẠN BÈ CŨ
-  if (!removeRelationshipWith(target.id)) {
-    alert("Không thể cập nhật quan hệ bạn bè!");
-    return;
-  }
-
-  // GIỮ NGUYÊN CÁC DỮ LIỆU CHẶN KHÁC
-  const updatedUsers = readRawBlockedUsers().filter(
-    (item) => !isSameUser(item, blockedUser)
-  );
-
-  if (saveBlockedUsers(updatedUsers)) {
+  try {
+    await unblockUser(user.userId ?? user.id);
+    await refreshBlockedUsers();
     alert(`Đã bỏ chặn ${displayName}.`);
+  } catch (error) {
+    alert(getApiErrorMessage(error));
   }
 };
 
   // BỎ CHẶN TẤT CẢ
-const handleUnblockAll = () => {
-  const account = getCurrentAccount();
-
-  if (!isUser(account)) {
-    alert("Bạn không có quyền bỏ chặn!");
-    return;
-  }
-
-  const currentUsers = readBlockedUsers();
+const handleUnblockAll = async () => {
+  const currentUsers = blockedUsers;
 
   if (currentUsers.length === 0) return;
 
@@ -290,39 +104,18 @@ const handleUnblockAll = () => {
 
   if (!confirmed) return;
 
-  // XÓA CÁC QUAN HỆ CŨ CÒN SÓT LẠI
-  for (const user of currentUsers) {
-    const userId = user.userId ?? user.id;
-
-    const target = getAccountById(userId);
-
-    if (!isUser(target)) {
-      continue;
+  try {
+    for (const user of currentUsers) {
+      await unblockUser(user.userId ?? user.id);
     }
-
-    if (!removeRelationshipWith(userId)) {
-      alert(
-        "Không thể hoàn tất thao tác bỏ chặn!"
-      );
-
-      return;
-    }
-  }
-
-  // CHỈ XÓA NHỮNG USER ĐANG HIỂN THỊ
-  const updatedUsers = readRawBlockedUsers().filter(
-    (item) =>
-      !currentUsers.some(
-        (user) => isSameUser(item, user)
-      )
-  );
-
-  if (saveBlockedUsers(updatedUsers)) {
+    await refreshBlockedUsers();
     setSearchValue("");
-
     alert(
       "Đã bỏ chặn tất cả người dùng."
     );
+  } catch (error) {
+    await refreshBlockedUsers();
+    alert(getApiErrorMessage(error));
   }
 };
 
@@ -462,7 +255,14 @@ const handleUnblockAll = () => {
         </div>
 
         {/* DANH SÁCH NGƯỜI DÙNG */}
-        {filteredUsers.length === 0 ? (
+        {isLoading ? (
+          <p role="status">Đang tải danh sách đã chặn…</p>
+        ) : loadError ? (
+          <div className="blocked-users-empty" role="alert">
+            <p>{loadError}</p>
+            <button type="button" onClick={refreshBlockedUsers}>Thử tải lại</button>
+          </div>
+        ) : filteredUsers.length === 0 ? (
           <div className="blocked-users-empty">
             <div className="blocked-empty-icon">
               🛡️
