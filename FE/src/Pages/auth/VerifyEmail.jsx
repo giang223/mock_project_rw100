@@ -5,22 +5,19 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { resendVerification, verifyEmail } from "../../api/auth";
+import { getApiErrorMessage } from "../../api/http";
 
-// CẤU HÌNH DEMO
+// Số chữ số theo hợp đồng xác minh email của BE.
 const OTP_LENGTH = 6;
-const OTP_DURATION = 300;
-const RESEND_DURATION = 60;
-
-// CHỈ SỬ DỤNG ĐỂ KIỂM THỬ FRONTEND
-const DEMO_OTP = "123456";
-
 function VerifyEmail() {
   const navigate = useNavigate();
   const location = useLocation();
 
   // NHẬN EMAIL TỪ TRANG REGISTER
-  const email = location.state?.email || "";
-  const isDemo = location.state?.demo === true;
+  const [email, setEmail] = useState(
+    location.state?.email || new URLSearchParams(location.search).get("email") || ""
+  );
 
   const [otp, setOtp] = useState(
     Array(OTP_LENGTH).fill("")
@@ -29,58 +26,19 @@ function VerifyEmail() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const [expiresAt, setExpiresAt] = useState(
-    () => Date.now() + OTP_DURATION * 1000
-  );
-
-  const [resendAt, setResendAt] = useState(
-    () => Date.now() + RESEND_DURATION * 1000
-  );
-
-  const [now, setNow] = useState(Date.now());
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const inputRefs = useRef([]);
-
-  // THỜI GIAN OTP CÒN HIỆU LỰC
-  const timeLeft = Math.max(
-    0,
-    Math.ceil((expiresAt - now) / 1000)
-  );
-
-  // THỜI GIAN CHỜ GỬI LẠI
-  const resendTime = Math.max(
-    0,
-    Math.ceil((resendAt - now) / 1000)
-  );
-
-  // ĐẾM NGƯỢC THỜI GIAN
-  useEffect(() => {
-    if (!isDemo || !email) return;
-
-    const timer = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isDemo, email]);
+  const focusOtpOnMount = useRef(Boolean(email));
 
   // TỰ ĐỘNG FOCUS Ô ĐẦU TIÊN
   useEffect(() => {
-    if (email) {
+    if (focusOtpOnMount.current) {
       inputRefs.current[0]?.focus();
     }
-  }, [email]);
+  }, []);
 
   // ĐỊNH DẠNG THỜI GIAN
-  const formatTime = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-
-    return `${String(minutes).padStart(2, "0")}:${String(
-      remainingSeconds
-    ).padStart(2, "0")}`;
-  };
-
   // XỬ LÝ NHẬP OTP
   const handleChange = (index, value) => {
     const digits = value.replace(/\D/g, "");
@@ -175,7 +133,7 @@ function VerifyEmail() {
   };
 
   // XÁC THỰC EMAIL
-  const handleVerify = (event) => {
+  const handleVerify = async (event) => {
     event.preventDefault();
 
     setError("");
@@ -199,79 +157,39 @@ function VerifyEmail() {
       return;
     }
 
-    // CHƯA KẾT NỐI BACKEND
-    if (!isDemo) {
-      setMessage(
-        "Chức năng xác thực email đang chờ kết nối Backend."
-      );
-
-      return;
+    setIsSubmitting(true);
+    try {
+      await verifyEmail(email.trim(), otpCode);
+      navigate("/login", {
+        replace: true,
+        state: { authMessage: "Email đã được xác minh. Bạn có thể đăng nhập." },
+      });
+    } catch (verifyError) {
+      setError(getApiErrorMessage(verifyError, "Mã xác minh không hợp lệ hoặc đã hết hạn."));
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // KIỂM TRA THỜI GIAN HẾT HẠN
-    if (Date.now() >= expiresAt) {
-      setError(
-        "Mã OTP đã hết hạn. Vui lòng gửi lại mã."
-      );
-
-      return;
-    }
-
-    // KIỂM TRA OTP DEMO
-    if (otpCode !== DEMO_OTP) {
-      setError(
-        "Mã OTP không chính xác. Vui lòng thử lại."
-      );
-
-      return;
-    }
-
-    alert(
-      "Kiểm thử OTP thành công! Email thật chưa được xác thực."
-    );
-
-    navigate("/login", {
-      replace: true,
-    });
   };
 
   // GỬI LẠI MÃ OTP
-  const handleResend = () => {
+  const handleResend = async () => {
     if (!email) {
       setError("Không xác định được email.");
       return;
     }
 
-    if (!isDemo) {
-      setMessage(
-        "Chưa thể gửi OTP vì chưa kết nối Backend."
-      );
-
-      return;
-    }
-
-    if (Date.now() < resendAt) return;
-
-    const currentTime = Date.now();
-
-    setOtp(Array(OTP_LENGTH).fill(""));
+    setIsSubmitting(true);
     setError("");
-
-    setNow(currentTime);
-
-    setExpiresAt(
-      currentTime + OTP_DURATION * 1000
-    );
-
-    setResendAt(
-      currentTime + RESEND_DURATION * 1000
-    );
-
-    setMessage(
-      "Đã đặt lại thời gian OTP demo. Mã kiểm thử vẫn là 123456."
-    );
-
-    inputRefs.current[0]?.focus();
+    try {
+      await resendVerification(email.trim());
+      setOtp(Array(OTP_LENGTH).fill(""));
+      setMessage("Nếu email cần xác minh, mã mới sẽ được gửi đến hộp thư của bạn.");
+      inputRefs.current[0]?.focus();
+    } catch (resendError) {
+      setError(getApiErrorMessage(resendError, "Không thể gửi lại mã xác minh."));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // CHE MỘT PHẦN EMAIL
@@ -300,53 +218,27 @@ function VerifyEmail() {
 
         {/* MÔ TẢ */}
         <p className="subtitle">
-          {isDemo
-            ? "Nhập mã OTP demo gồm 6 chữ số để kiểm thử giao diện."
-            : "Vui lòng nhập mã OTP gồm 6 chữ số để xác thực email."}
+          "Vui lòng nhập mã gồm 6 chữ số đã gửi đến email của bạn."
         </p>
 
         {/* EMAIL CẦN XÁC THỰC */}
-        {email && (
-          <div className="verify-email-address">
-            {maskEmail(email)}
-          </div>
+        {location.state?.notice && (
+          <div className="verify-info-message" role="status">{location.state.notice}</div>
         )}
 
-        {/* KHÔNG CÓ EMAIL */}
-        {!email ? (
-          <div className="verify-missing-email">
+        <div className="login-form-group">
+          <label htmlFor="verificationEmail">Email cần xác minh</label>
+          <input
+            id="verificationEmail"
+            type="email"
+            autoComplete="email"
+            maxLength={254}
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </div>
 
-            <p>
-              Không tìm thấy email cần xác thực.
-              Vui lòng quay lại trang đăng ký.
-            </p>
-
-            <Link
-              to="/register"
-              className="verify-register-link"
-            >
-              Quay lại đăng ký
-            </Link>
-
-          </div>
-        ) : (
-          <>
-            {/* THÔNG BÁO DEMO */}
-            {isDemo && (
-              <div className="verify-demo-note">
-
-                <strong>Chế độ kiểm thử Frontend</strong>
-
-                <p>
-                  Mã OTP demo: <b>{DEMO_OTP}</b>
-                </p>
-
-                <small>
-                  Không có email thật được gửi.
-                </small>
-
-              </div>
-            )}
+        {email && <div className="verify-email-address">{maskEmail(email)}</div>}
 
             {/* THÔNG BÁO */}
             {message && (
@@ -420,33 +312,13 @@ function VerifyEmail() {
               )}
 
               {/* THỜI GIAN HẾT HẠN */}
-              {isDemo && (
-                <div className="otp-expiration">
-
-                  {timeLeft > 0 ? (
-                    <>
-                      Mã OTP hết hạn sau:{" "}
-
-                      <strong>
-                        {formatTime(timeLeft)}
-                      </strong>
-                    </>
-                  ) : (
-                    <span className="otp-expired">
-                      Mã OTP đã hết hạn
-                    </span>
-                  )}
-
-                </div>
-              )}
-
               {/* NÚT XÁC THỰC */}
               <button
                 type="submit"
                 className="login-button verify-submit-button"
-                disabled={isDemo && timeLeft === 0}
+                disabled={isSubmitting}
               >
-                Xác thực email
+                {isSubmitting ? "Đang xác minh…" : "Xác thực email"}
               </button>
 
             </form>
@@ -460,11 +332,9 @@ function VerifyEmail() {
                 type="button"
                 className="verify-resend-button"
                 onClick={handleResend}
-                disabled={isDemo && resendTime > 0}
+                disabled={isSubmitting || !email.trim()}
               >
-                {isDemo && resendTime > 0
-                  ? `Gửi lại mã (${formatTime(resendTime)})`
-                  : "Gửi lại mã OTP"}
+                {isSubmitting ? "Đang xử lý…" : "Gửi lại mã OTP"}
               </button>
 
             </div>
@@ -477,8 +347,7 @@ function VerifyEmail() {
               Sử dụng địa chỉ email khác
             </Link>
 
-          </>
-        )}
+
 
         {/* QUAY LẠI LOGIN */}
         <div className="auth-footer">

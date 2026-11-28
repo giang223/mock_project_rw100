@@ -1,32 +1,12 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom"; 
-import {
-  ACCOUNT_EVENT,
-  getCurrentAccount,
-  readAccountData,
-  saveAccountData,
-  getMockUsers,
-  getAccountById,
-  isUser,
-} from "../../utils/mockAccounts";
-
-import {
-  FRIEND_EVENT,
-  BLOCKED_KEY,
-  BLOCKED_EVENT,
-  getFriendProfile,
-  getFriendStatus,
-  getMutualFriends,
-  getRelationship,
-  sendFriendRequest,
-  cancelFriendRequest,
-  unfriendUser,
-  removeRelationshipWith,
-  isBlockedBetween,
-} from "../../utils/friendUtils";
-
-const PROFILE_EVENT = "miniSocialProfileUpdated";
+import { getCurrentAccount } from "../../utils/mockAccounts";
+import { getApiErrorMessage } from "../../api/http";
+import { pageContent } from "../../api/apiResponse";
+import { toUserView } from "../../api/adapters";
+import { blockUser, getBlockedUsers, searchUsers, unblockUser } from "../../api/users";
+import { cancelFriendRequest, getSentFriendRequests, sendFriendRequest, unfriend } from "../../api/friends";
 
 // TÌM KIẾM KHÔNG PHÂN BIỆT DẤU
 function normalizeText(value) {
@@ -38,85 +18,6 @@ function normalizeText(value) {
     .trim();
 }
 
-// ĐỌC DANH SÁCH CHẶN CỦA TÀI KHOẢN
-function readBlockedUsers() {
-  const account = getCurrentAccount();
-
-  if (!isUser(account)) return [];
-
-  const data = readAccountData(
-    BLOCKED_KEY,
-    [],
-    account.id
-  );
-
-  return Array.isArray(data)
-    ? data.filter(Boolean)
-    : [];
-}
-
-// KIỂM TRA NGƯỜI DÙNG TRONG DANH SÁCH CHẶN
-function isSameBlockedUser(item, user) {
-  if (!item || !user) return false;
-
-  if (item.userId != null) {
-    return String(item.userId) === String(user.id);
-  }
-
-  return item.username === user.username;
-}
-
-// ĐỌC DANH SÁCH NGƯỜI DÙNG
-function readUsers() {
-  const account = getCurrentAccount();
-
-  if (!isUser(account)) return [];
-
-  const blockedUsers = readBlockedUsers();
-
-  return getMockUsers()
-    .filter(
-      (user) =>
-        String(user.id) !== String(account.id)
-    )
-    .map((user) => {
-      const profile = getFriendProfile(user.id);
-
-      if (!profile) return null;
-
-      const blocked = blockedUsers.some(
-        (item) => isSameBlockedUser(item, user)
-      );
-
-      // KHÔNG HIỂN THỊ NGƯỜI ĐÃ CHẶN MÌNH
-      if (
-        !blocked &&
-        isBlockedBetween(account.id, user.id)
-      ) {
-        return null;
-      }
-
-      return {
-        id: user.id,
-        name: profile.fullName,
-        username: profile.username,
-        avatar: profile.avatar || "",
-        bio: profile.bio || "",
-        color: profile.color || "blue",
-
-        status: getFriendStatus(user.id),
-
-        blocked,
-
-        mutualFriends: getMutualFriends(
-          account.id,
-          user.id
-        ),
-      };
-    })
-    .filter(Boolean);
-}
-
 function SearchUsers() {
   const [searchParams] = useSearchParams();
 
@@ -124,8 +25,38 @@ function SearchUsers() {
     searchParams.get("q") || ""
   );
 
-  const [users, setUsers] =
-    useState(readUsers);
+  const [users, setUsers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  const refreshUsers = useCallback(async (query = keyword) => {
+    setIsLoading(true);
+    setLoadError("");
+    try {
+      const [searchPage, blockedPage] = await Promise.all([
+        searchUsers(query.trim(), { page: 0, size: 20 }),
+        getBlockedUsers({ page: 0, size: 100 }),
+      ]);
+      const blockedIds = new Set(pageContent(blockedPage).map((item) => String(item.id)));
+      setUsers(pageContent(searchPage)
+        .map((raw) => {
+          const user = toUserView(raw);
+          return {
+            ...user,
+            name: user.fullName,
+            color: "blue",
+            status: String(raw.friendshipStatus || "none").toLowerCase(),
+            blocked: blockedIds.has(String(user.id)),
+            mutualFriends: Number(raw.mutualFriendCount || 0),
+          };
+        })
+        .filter((user) => String(user.id) !== String(getCurrentAccount()?.id)));
+    } catch (error) {
+      setLoadError(getApiErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [keyword]);
 
   // ĐỒNG BỘ TỪ KHÓA TÌM KIẾM TRÊN HEADER
   useEffect(() => {
@@ -134,41 +65,11 @@ function SearchUsers() {
     setKeyword(query);
   }, [searchParams]);
 
-  // ĐỒNG BỘ DỮ LIỆU GIỮA CÁC MÀN HÌNH
+  // Search is server-backed; debounce to avoid one request per keystroke.
   useEffect(() => {
-    const refreshData = () => {
-      const nextUsers = readUsers();
-
-      setUsers(nextUsers);
-    };
-
-    refreshData();
-
-    const events = [
-      FRIEND_EVENT,
-      BLOCKED_EVENT,
-      ACCOUNT_EVENT,
-      PROFILE_EVENT,
-      "storage",
-      "focus",
-    ];
-
-    events.forEach((event) => {
-      window.addEventListener(
-        event,
-        refreshData
-      );
-    });
-
-    return () => {
-      events.forEach((event) => {
-        window.removeEventListener(
-          event,
-          refreshData
-        );
-      });
-    };
-  }, []);
+    const timer = window.setTimeout(() => refreshUsers(keyword), 250);
+    return () => window.clearTimeout(timer);
+  }, [keyword, refreshUsers]);
 
   // TÌM KIẾM NGƯỜI DÙNG
   const filteredUsers = useMemo(() => {
@@ -176,7 +77,7 @@ function SearchUsers() {
 
     return users.filter((user) =>
       normalizeText(
-        `${user.name} ${user.username} ${user.bio}`
+        `${user.name} ${user.username} ${user.bio || ""}`
       ).includes(searchValue)
     );
   }, [users, keyword]);
@@ -207,20 +108,12 @@ function SearchUsers() {
 const canInteractWithUser = (user) => {
   const account = getCurrentAccount();
 
-  if (!isUser(account)) {
+  if (account?.role !== "USER") {
     alert("Bạn không có quyền thực hiện chức năng này!");
     return false;
   }
 
-  const target = getAccountById(user?.id);
-
-  if (!isUser(target)) {
-    alert("Tài khoản người dùng không hợp lệ!");
-    setUsers(readUsers());
-    return false;
-  }
-
-  if (String(account.id) === String(target.id)) {
+  if (!user?.id || String(account.id) === String(user.id)) {
     return false;
   }
 
@@ -228,189 +121,72 @@ const canInteractWithUser = (user) => {
 };
 
   // GỬI LỜI MỜI KẾT BẠN
-  const handleSendRequest = (user) => {
-  if (!canInteractWithUser(user)) return;
-
-  const status = getFriendStatus(user.id);
-
-    if (status === "blocked") {
-      alert("Không thể kết bạn với người dùng này!");
-      return;
-    }
-
-    if (status !== "none") {
-      alert(
-        "Đã tồn tại lời mời hoặc quan hệ bạn bè!"
-      );
-
-      setUsers(readUsers());
-      return;
-    }
-
-    if (sendFriendRequest(user.id)) {
-      setUsers(readUsers());
-
-      alert(
-        `Đã gửi lời mời kết bạn đến ${user.name}.`
-      );
-    } else {
-      alert("Không thể gửi lời mời kết bạn!");
+  const handleSendRequest = async (user) => {
+    if (!canInteractWithUser(user)) return;
+    try {
+      await sendFriendRequest(user.id);
+      await refreshUsers();
+      alert(`Đã gửi lời mời kết bạn đến ${user.name}.`);
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
   // HỦY LỜI MỜI KẾT BẠN
-  const handleCancelRequest = (user) => {
-    const account = getCurrentAccount();
-
+  const handleCancelRequest = async (user) => {
     if (!canInteractWithUser(user)) return;
-
-    const relationship = getRelationship(
-      account.id,
-      user.id
-    );
-
-    if (
-      !relationship ||
-      relationship.status !== "pending" ||
-      String(relationship.senderId) !==
-        String(account.id)
-    ) {
-      alert("Lời mời không còn tồn tại!");
-      setUsers(readUsers());
-      return;
-    }
-
     const confirmed = window.confirm(
       `Bạn có muốn hủy lời mời kết bạn với ${user.name}?`
     );
-
     if (!confirmed) return;
-
-    if (cancelFriendRequest(relationship.id)) {
-      setUsers(readUsers());
-
+    try {
+      const page = await getSentFriendRequests({ page: 0, size: 100 });
+      const request = pageContent(page).find((item) => String(item.user?.id) === String(user.id));
+      if (!request) throw new Error("Lời mời không còn tồn tại.");
+      await cancelFriendRequest(request.id);
+      await refreshUsers();
       alert("Đã hủy lời mời kết bạn.");
-    } else {
-      alert("Không thể hủy lời mời!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
   // HỦY KẾT BẠN
-  const handleUnfriend = (user) => {
-    const account = getCurrentAccount();
-
+  const handleUnfriend = async (user) => {
     if (!canInteractWithUser(user)) return;
-
-    const relationship = getRelationship(
-      account.id,
-      user.id
-    );
-
-    if (
-      !relationship ||
-      relationship.status !== "accepted"
-    ) {
-      alert("Hai người chưa phải là bạn bè!");
-      setUsers(readUsers());
-      return;
-    }
-
     const confirmed = window.confirm(
       `Bạn có chắc chắn muốn hủy kết bạn với ${user.name}?`
     );
-
     if (!confirmed) return;
-
-    if (unfriendUser(relationship.id)) {
-      setUsers(readUsers());
-
+    try {
+      await unfriend(user.id);
+      await refreshUsers();
       alert(
         `Đã hủy kết bạn với ${user.name}.`
       );
-    } else {
-      alert("Không thể hủy kết bạn!");
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
   };
 
   // CHẶN NGƯỜI DÙNG
-  const handleBlockUser = (user) => {
-    const account = getCurrentAccount();
-
+  const handleBlockUser = async (user) => {
     if (!canInteractWithUser(user)) return;
-
-    if (String(account.id) === String(user.id)) {
-      return;
-    }
-
-    const currentBlocked = readBlockedUsers();
-
-    const alreadyBlocked = currentBlocked.some(
-      (item) => isSameBlockedUser(item, user)
-    );
-
-    if (alreadyBlocked) {
-      alert("Người dùng này đã bị chặn!");
-      return;
-    }
-
     const confirmed = window.confirm(
       `Bạn có chắc chắn muốn chặn ${user.name}?\nQuan hệ bạn bè và lời mời kết bạn hiện tại sẽ bị xóa.`
     );
-
     if (!confirmed) return;
-
-    const newBlockedUser = {
-      id: user.id,
-      userId: user.id,
-      name: user.name,
-      username: user.username,
-      avatar: user.avatar || "",
-      bio: user.bio || "",
-      color: user.color || "blue",
-      blockedAt: new Date().toISOString(),
-    };
-
-    const nextBlockedUsers = [
-      ...currentBlocked,
-      newBlockedUser,
-    ];
-
-    const success = saveAccountData(
-      BLOCKED_KEY,
-      nextBlockedUsers,
-      account.id
-    );
-
-    if (!success) {
-      alert("Không thể lưu danh sách chặn!");
-      return;
+    try {
+      await blockUser(user.id);
+      await refreshUsers();
+      alert(`Đã chặn ${user.name}.`);
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
-
-    // XÓA QUAN HỆ BẠN BÈ HOẶC LỜI MỜI
-    const removed = removeRelationshipWith(
-      user.id
-    );
-
-    window.dispatchEvent(
-      new Event(BLOCKED_EVENT)
-    );
-
-    setUsers(readUsers());
-
-    if (!removed) {
-      alert(
-        "Đã chặn người dùng nhưng chưa xóa được quan hệ bạn bè!"
-      );
-      return;
-    }
-
-    alert(`Đã chặn ${user.name}.`);
   };
 
   // BỎ CHẶN NGƯỜI DÙNG
-  const handleUnblockUser = (user) => {
-    const account = getCurrentAccount();
-
+  const handleUnblockUser = async (user) => {
     if (!canInteractWithUser(user)) return;
 
     const confirmed = window.confirm(
@@ -419,35 +195,13 @@ const canInteractWithUser = (user) => {
 
     if (!confirmed) return;
 
-    // ĐẢM BẢO QUAN HỆ CŨ ĐÃ ĐƯỢC XÓA
-    if (!removeRelationshipWith(user.id)) {
-      alert("Không thể cập nhật quan hệ bạn bè!");
-      return;
+    try {
+      await unblockUser(user.id);
+      await refreshUsers();
+      alert(`Đã bỏ chặn ${user.name}.`);
+    } catch (error) {
+      alert(getApiErrorMessage(error));
     }
-
-    const nextBlockedUsers =
-      readBlockedUsers().filter(
-        (item) => !isSameBlockedUser(item, user)
-      );
-
-    const success = saveAccountData(
-      BLOCKED_KEY,
-      nextBlockedUsers,
-      account.id
-    );
-
-    if (!success) {
-      alert("Không thể bỏ chặn người dùng!");
-      return;
-    }
-
-    window.dispatchEvent(
-      new Event(BLOCKED_EVENT)
-    );
-
-    setUsers(readUsers());
-
-    alert(`Đã bỏ chặn ${user.name}.`);
   };
 
   return (
@@ -525,7 +279,10 @@ const canInteractWithUser = (user) => {
             <span>{filteredUsers.length} người dùng</span>
           </div>
 
-          {filteredUsers.length === 0 ? (
+          {loadError && <p role="alert" className="profile-field-error">{loadError}</p>}
+          {isLoading && <p role="status">Đang tải người dùng…</p>}
+
+          {!isLoading && filteredUsers.length === 0 ? (
             <div className="search-no-result">
               <div>🔎</div>
               <h3>Không tìm thấy người dùng</h3>

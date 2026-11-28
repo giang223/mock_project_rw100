@@ -1,100 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import {
-  MOCK_ACCOUNTS,
-  ACCOUNT_EVENT,
-  getCurrentAccount,
-  getAccountById,
-  getAccountByName,
-  readAccountData,
-  getMockUsers,
-  isUser,
-} from "../../utils/mockAccounts";
-
-import {
-  FRIEND_EVENT,
-  BLOCKED_EVENT,
-  getFriendIds,
-  isBlockedBetween,
-} from "../../utils/friendUtils";
-
-const PROFILE_KEY = "miniSocialProfile";
-const PROFILE_EVENT = "miniSocialProfileUpdated";
-const POSTS_KEY = "miniSocialPosts";
-const POSTS_EVENT = "miniSocialPostsUpdated";
+import { getCurrentAccount, isUser } from "../../utils/mockAccounts";
+import { getApiErrorMessage } from "../../api/http";
+import { getMyProfile, getPublicProfile, getUserPosts } from "../../api/users";
+import { pageContent } from "../../api/apiResponse";
+import { toPostView, toUserView } from "../../api/adapters";
 
 // LẤY TÀI KHOẢN HIỆN TẠI
 function readCurrentAccount() {
-  return getCurrentAccount() || MOCK_ACCOUNTS[0];
-}
-
-// ĐỌC HỒ SƠ THEO TÀI KHOẢN
-function readProfile(account) {
-  const defaultProfile = {
-    phone: "",
-    birthday: "",
-    address: "",
-    avatar: "",
-    cover: "",
-    gender: "",
-    bio: "Đang sử dụng MiniSocial.",
-    ...account,
-  };
-
-  try {
-    const legacyProfile =
-      account.id === 1
-        ? JSON.parse(
-            localStorage.getItem(PROFILE_KEY) || "{}"
-          )
-        : {};
-
-    const savedProfile = readAccountData(
-      PROFILE_KEY,
-      legacyProfile,
-      account.id
-    );
-
-    return {
-      ...defaultProfile,
-      ...savedProfile,
-      id: account.id,
-      username: account.username,
-      email: account.email,
-    };
-  } catch {
-    return defaultProfile;
-  }
-}
-
-// TÌM TÀI KHOẢN CẦN XEM
-function findViewedAccount(userId, viewedName) {
-  // TÌM THEO ID
-  if (userId) {
-    const account = getAccountById(userId);
-
-    return isUser(account) ? account : null;
-  }
-
-  // XEM TRANG CÁ NHÂN CỦA MÌNH
-  if (!viewedName) {
-    const account = getCurrentAccount();
-
-    return isUser(account) ? account : null;
-  }
-
-  // TÌM THEO TÊN HOẶC USERNAME
-  const account =
-    getAccountByName(viewedName) ||
-    getMockUsers().find(
-      (user) =>
-        user.username === viewedName ||
-        readProfile(user).fullName === viewedName
-    ) ||
-    null;
-
-  return isUser(account) ? account : null;
+  return getCurrentAccount();
 }
 
 function formatBirthday(value) {
@@ -110,127 +25,7 @@ function formatBirthday(value) {
 }
 // TÌM TÀI KHOẢN CỦA TÁC GIẢ
 function findPostAuthor(post) {
-  if (post.authorId != null) {
-    return getAccountById(post.authorId);
-  }
-
-  return getAccountByName(post.author);
-}
-
-// KIỂM TRA QUYỀN XEM BÀI VIẾT
-function canViewProfilePost(post, currentAccount) {
-  if (!post || !isUser(currentAccount)) {
-    return false;
-  }
-
-  const author = findPostAuthor(post);
-
-  // CHỈ HIỂN THỊ BÀI VIẾT CỦA USER
-  if (!isUser(author)) {
-    return false;
-  }
-
-  // CHỦ BÀI VIẾT
-  if (
-    String(author.id) === String(currentAccount.id)
-  ) {
-    return true;
-  }
-
-  // KIỂM TRA CHẶN HAI CHIỀU
-  if (
-    isBlockedBetween(currentAccount.id, author.id)
-  ) {
-    return false;
-  }
-
-  const privacy = post.privacy || "public";
-
-  // BÀI VIẾT CÔNG KHAI
-  if (privacy === "public") {
-    return true;
-  }
-
-  // BÀI VIẾT DÀNH CHO BẠN BÈ
-  if (privacy === "friends") {
-    return getFriendIds(currentAccount.id)
-      .map(String)
-      .includes(String(author.id));
-  }
-
-  // BÀI VIẾT RIÊNG TƯ
-  return false;
-}
-
-// LẤY BÀI VIẾT CỦA NGƯỜI DÙNG
-function readProfilePosts(
-  viewedAccount,
-  viewedName,
-  currentAccount
-) {
-  try {
-    const allPosts = JSON.parse(
-      localStorage.getItem(POSTS_KEY) || "[]"
-    );
-
-    if (!Array.isArray(allPosts)) return [];
-
-    return allPosts
-      .filter((post) => {
-        if (!post) return false;
-
-        const hasAuthorId = post.authorId != null;
-
-        const isAuthor = hasAuthorId
-          ? viewedAccount &&
-            String(post.authorId) ===
-              String(viewedAccount.id)
-          : post.author === viewedName ||
-            post.author === viewedAccount?.fullName;
-
-        if (!isAuthor) return false;
-
-        return canViewProfilePost(
-          post,
-          currentAccount
-        );
-      })
-      .map((post) => {
-        // BÀI VIẾT THÔNG THƯỜNG
-        if (!post.isShared) {
-          return post;
-        }
-
-        // TÌM BÀI VIẾT GỐC MỚI NHẤT
-        const original = allPosts.find(
-          (item) =>
-            item &&
-            String(item.id) ===
-              String(post.originalPost?.id)
-        );
-
-        // KIỂM TRA QUYỀN XEM BÀI GỐC
-        if (
-          !original ||
-          original.isShared ||
-          !canViewProfilePost(
-            original,
-            currentAccount
-          )
-        ) {
-          return null;
-        }
-
-        // ĐỒNG BỘ BÀI VIẾT GỐC
-        return {
-          ...post,
-          originalPost: original,
-        };
-      })
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
+  return post?.authorProfile || post?.author || null;
 }
 
 // ĐỊNH DẠNG THỜI GIAN BÀI VIẾT
@@ -262,15 +57,11 @@ function getPrivacyLabel(privacy) {
 
 // LẤY HỒ SƠ TÁC GIẢ BÀI VIẾT
 function getPostAuthorProfile(post) {
-  const account = findPostAuthor(post);
-
-  if (account) {
-    return readProfile(account);
-  }
-
+  const author = findPostAuthor(post);
   return {
-    fullName: post.author || "Người dùng",
-    avatar: "",
+    ...(author || {}),
+    fullName: author?.fullName || (typeof post?.author === "string" ? post.author : "Người dùng"),
+    avatar: author?.avatar || author?.avatarUrl || "",
     color: "blue",
   };
 }
@@ -287,46 +78,45 @@ function getPostImages(post) {
 function Profile() {
   const [params] = useSearchParams();
 
-  const [currentAccount, setCurrentAccount] =
-    useState(readCurrentAccount);
-
-  const [refreshVersion, setRefreshVersion] =
-    useState(0);
+  const [currentAccount] = useState(readCurrentAccount);
+  const [viewedAccount, setViewedAccount] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const requestedUserId = params.get("userId");
   const requestedName = params.get("user");
 
-  const viewedAccount = findViewedAccount(
-    requestedUserId,
-    requestedName
-  );
+  const viewedName = viewedAccount?.fullName || requestedName || "Người dùng MiniSocial";
 
-  const viewedName =
-    viewedAccount?.fullName ||
-    requestedName ||
-    "Người dùng MiniSocial";
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    setLoadError("");
+    const loadProfile = requestedUserId ? getPublicProfile(requestedUserId) : getMyProfile();
+    loadProfile
+      .then(async (rawProfile) => {
+        const profile = toUserView(rawProfile);
+        const page = await getUserPosts(profile.id, { page: 0, size: 20 });
+        if (!active) return;
+        setViewedAccount(profile);
+        setPosts(pageContent(page).map((post) => toPostView(post, currentAccount?.id)).filter(Boolean));
+      })
+      .catch((error) => {
+        if (active) setLoadError(getApiErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => { active = false; };
+  }, [requestedUserId, currentAccount?.id]);
 
   // KIỂM TRA CÓ PHẢI TRANG CÁ NHÂN CỦA MÌNH
-const isOwnProfile =
-  isUser(getCurrentAccount()) &&
-  isUser(currentAccount) &&
-  isUser(viewedAccount) &&
-  String(viewedAccount.id) ===
-    String(currentAccount.id);
+const isOwnProfile = !requestedUserId || String(viewedAccount?.id) === String(currentAccount?.id);
 
       // KIỂM TRA HAI TÀI KHOẢN CÓ CHẶN NHAU KHÔNG
-const isBlockedProfile =
-  !isOwnProfile &&
-  viewedAccount !== null &&
-  isBlockedBetween(
-    currentAccount.id,
-    viewedAccount.id
-  );
-
   // THÔNG TIN NGƯỜI DÙNG ĐANG XEM
-  const viewedProfile = viewedAccount
-    ? readProfile(viewedAccount)
-    : {
+  const viewedProfile = viewedAccount || {
         fullName: viewedName,
         email: "",
         phone: "",
@@ -358,56 +148,10 @@ const isBlockedProfile =
       : "Chưa công khai",
   };
 
-  // ĐỒNG BỘ HỒ SƠ VÀ BÀI VIẾT
-  useEffect(() => {
-    const refreshData = () => {
-      setCurrentAccount(readCurrentAccount());
-
-      setRefreshVersion(
-        (previous) => previous + 1
-      );
-    };
-
-    const events = [
-  ACCOUNT_EVENT,
-  PROFILE_EVENT,
-  POSTS_EVENT,
-  FRIEND_EVENT,
-  BLOCKED_EVENT,
-  "storage",
-  "focus",
-];
-
-    events.forEach((event) => {
-      window.addEventListener(
-        event,
-        refreshData
-      );
-    });
-
-    return () => {
-      events.forEach((event) => {
-        window.removeEventListener(
-          event,
-          refreshData
-        );
-      });
-    };
-  }, []);
-
-  // LẤY DANH SÁCH BÀI VIẾT
-const posts = readProfilePosts(
-  viewedAccount,
-  viewedName,
-  currentAccount
-);
-
 // KHÔNG HIỂN THỊ HỒ SƠ KHI KHÔNG CÓ QUYỀN
 if (
   !isUser(getCurrentAccount()) ||
-  !isUser(currentAccount) ||
-  !isUser(viewedAccount) ||
-  isBlockedProfile
+  (!isLoading && !viewedAccount)
 ) {
   return (
     <div className="profile-page">
@@ -434,6 +178,9 @@ if (
     </div>
   );
 }
+
+if (isLoading) return <div className="profile-page"><div className="profile-card">Đang tải hồ sơ…</div></div>;
+if (loadError) return <div className="profile-page"><div className="profile-card profile-unavailable"><h2>Không thể tải hồ sơ</h2><p role="alert">{loadError}</p><Link to="/feed" className="profile-back-button">Quay về bảng tin</Link></div></div>;
 
   return (
     <div className="profile-page">

@@ -4,16 +4,13 @@ import com.minisocial.security.JwtAuthenticationFilter;
 import com.minisocial.security.AuthRateLimitFilter;
 import com.minisocial.security.AuthRateLimitService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.minisocial.security.UserDetailsServiceImpl;
 import com.minisocial.security.OAuthLoginHandlers;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -24,8 +21,6 @@ import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
 import org.springframework.security.core.Authentication;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.filter.CorsFilter;
@@ -39,8 +34,7 @@ import org.springframework.security.config.Customizer;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
-    private final UserDetailsServiceImpl userDetailsService;
-    private final OAuthLoginHandlers oauthLoginHandlers;
+    private final ObjectProvider<OAuthLoginHandlers> oauthLoginHandlers;
 
     @org.springframework.beans.factory.annotation.Value("${app.auth.oauth.enabled:false}")
     private boolean oauthEnabled;
@@ -62,7 +56,8 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   AuthRateLimitFilter authRateLimitFilter) throws Exception {
+                                                   AuthRateLimitFilter authRateLimitFilter,
+                                                   AuthenticationProvider authenticationProvider) throws Exception {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(Customizer.withDefaults())
@@ -101,39 +96,21 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated()
             )
-            .authenticationProvider(authenticationProvider())
+            .authenticationProvider(authenticationProvider)
             .addFilterAfter(authRateLimitFilter, CorsFilter.class)
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         if (oauthEnabled) {
+            OAuthLoginHandlers handlers = oauthLoginHandlers.getObject();
             http.securityContext(context -> context
                             .securityContextRepository(new org.springframework.security.web.context.NullSecurityContextRepository()))
                     .oauth2Login(oauth -> oauth
-                            .successHandler(oauthLoginHandlers)
-                            .failureHandler(oauthLoginHandlers)
+                            .successHandler(handlers)
+                            .failureHandler(handlers)
                             .authorizedClientRepository(new DiscardingAuthorizedClientRepository()));
         }
 
         return http.build();
-    }
-
-    @Bean
-    public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-        authProvider.setUserDetailsService(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder());
-        return authProvider;
-    }
-
-    @Bean
-    public AuthenticationManager authenticationManager(
-            AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
-    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder(12);
     }
 
     private static final class DiscardingAuthorizedClientRepository

@@ -1,197 +1,11 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  MOCK_ACCOUNTS,
-  ACCOUNT_EVENT,
-  getCurrentAccount,
-  readAccountData,
-  isUser,
-} from "../../utils/mockAccounts";
-import {
-  FRIEND_EVENT,
-  BLOCKED_EVENT,
-  getFriendIds,
-  isBlockedBetween,
-} from "../../utils/friendUtils";
-
-const STORAGE_KEY = "miniSocialPosts";
-const POSTS_EVENT = "miniSocialPostsUpdated";
-
-const PROFILE_KEY = "miniSocialProfile";
-const PROFILE_EVENT = "miniSocialProfileUpdated";
-
-// LẤY TÀI KHOẢN HIỆN TẠI
-function readCurrentAccount() {
-  const account = getCurrentAccount();
-
-  return isUser(account) ? account : null;
-}
-
-// TÌM TÀI KHOẢN TÁC GIẢ
-function findAuthorAccount(name, authorId) {
-  return MOCK_ACCOUNTS.find((account) =>
-    authorId != null
-      ? String(account.id) === String(authorId)
-      : account.fullName === name
-  );
-}
-
-// ĐỌC HỒ SƠ THEO TÀI KHOẢN
-function readProfile(account) {
-  if (!account) return null;
-
-  try {
-    const legacyProfile =
-      account.id === 1
-        ? JSON.parse(
-            localStorage.getItem(PROFILE_KEY) || "{}"
-          )
-        : {};
-
-    return {
-      ...account,
-      ...readAccountData(
-        PROFILE_KEY,
-        legacyProfile,
-        account.id
-      ),
-      id: account.id,
-      username: account.username,
-      email: account.email,
-    };
-  } catch {
-    return account;
-  }
-}
-
-// ĐỌC DANH SÁCH BÀI VIẾT
-function readPosts() {
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) || "[]"
-    );
-
-    return Array.isArray(saved) ? saved : [];
-  } catch (error) {
-    console.error("Lỗi khi đọc bài viết:", error);
-    return [];
-  }
-}
-
-// LẤY DANH SÁCH ID ĐÃ LƯU BÀI VIẾT
-function getSavedBy(post) {
-  if (Array.isArray(post.savedBy)) {
-    return post.savedBy.map(String);
-  }
-
-  // HỖ TRỢ DỮ LIỆU CŨ CỦA TÀI KHOẢN SỐ 1
-  return post.isSaved ? ["1"] : [];
-}
-
-// KIỂM TRA QUYỀN XEM BÀI VIẾT
-function canViewPost(post, account) {
-  if (!post || !account || !isUser(account)) {
-    return false;
-  }
-
-  const author = findAuthorAccount(
-    post.author,
-    post.authorId
-  );
-
-  // CHỈ HIỂN THỊ BÀI VIẾT CỦA USER
-  if (!author || !isUser(author)) {
-    return false;
-  }
-
-  // CHỦ BÀI VIẾT LUÔN ĐƯỢC XEM
-  if (
-    String(author.id) === String(account.id)
-  ) {
-    return true;
-  }
-
-  // KIỂM TRA CHẶN HAI CHIỀU
-  if (
-    isBlockedBetween(account.id, author.id)
-  ) {
-    return false;
-  }
-
-  const privacy = post.privacy || "public";
-
-  // BÀI VIẾT CÔNG KHAI
-  if (privacy === "public") {
-    return true;
-  }
-
-  // BÀI VIẾT DÀNH CHO BẠN BÈ
-  if (privacy === "friends") {
-    return getFriendIds(account.id)
-      .map(String)
-      .includes(String(author.id));
-  }
-
-  // BÀI VIẾT RIÊNG TƯ
-  return false;
-}
-
-// LẤY BÀI VIẾT ĐÃ LƯU CỦA TÀI KHOẢN
-function readSavedPosts(
-  account = readCurrentAccount()
-) {
-  if (!account || !isUser(account)) {
-    return [];
-  }
-
-  const allPosts = readPosts();
-
-  return allPosts
-    .filter((post) => {
-      if (!post) return false;
-
-      // KIỂM TRA ĐÃ LƯU BÀI VIẾT
-      const isSaved = getSavedBy(post).includes(
-        String(account.id)
-      );
-
-      if (!isSaved) return false;
-
-      // KIỂM TRA QUYỀN XEM
-      return canViewPost(post, account);
-    })
-    .map((post) => {
-      // BÀI VIẾT THÔNG THƯỜNG
-      if (!post.isShared) {
-        return post;
-      }
-
-      // TÌM BÀI VIẾT GỐC MỚI NHẤT
-      const original = allPosts.find(
-        (item) =>
-          item &&
-          String(item.id) ===
-            String(post.originalPost?.id)
-      );
-
-      // BÀI GỐC KHÔNG CÒN KHẢ DỤNG
-      if (
-        !original ||
-        original.isShared ||
-        !canViewPost(original, account)
-      ) {
-        return null;
-      }
-
-      // ĐỒNG BỘ NỘI DUNG BÀI VIẾT GỐC
-      return {
-        ...post,
-        originalPost: original,
-      };
-    })
-    .filter(Boolean);
-}
+import { getCurrentAccount } from "../../utils/mockAccounts";
+import { getSavedPosts, toggleSave } from "../../api/posts";
+import { toPostView } from "../../api/adapters";
+import { pageContent } from "../../api/apiResponse";
+import { getApiErrorMessage } from "../../api/http";
 
 // LẤY DANH SÁCH HÌNH ẢNH
 function getPostImages(post) {
@@ -245,66 +59,44 @@ function getPrivacyLabel(privacy) {
 }
 
 function SavedPosts() {
-  const [currentAccount, setCurrentAccount] =
-    useState(readCurrentAccount);
-
-  const [posts, setPosts] =
-    useState(readSavedPosts);
+  const currentAccount = getCurrentAccount();
+  const [posts, setPosts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   const [searchText, setSearchText] =
     useState("");
 
-  // ĐỒNG BỘ DỮ LIỆU
+  // Tải danh sách đã lưu từ backend; backend kiểm tra quyền xem.
   useEffect(() => {
-    const refreshData = () => {
-      const account = readCurrentAccount();
-
-      setCurrentAccount(account);
-      setPosts(readSavedPosts(account));
+    let active = true;
+    const refreshData = async () => {
+      setIsLoading(true);
+      setLoadError("");
+      try {
+        const page = await getSavedPosts({ page: 0, size: 50 });
+        if (active) setPosts(pageContent(page).map((post) => toPostView(post, currentAccount?.id)));
+      } catch (error) {
+        if (active) setLoadError(getApiErrorMessage(error));
+      } finally {
+        if (active) setIsLoading(false);
+      }
     };
 
     refreshData();
-
-    const events = [
-  ACCOUNT_EVENT,
-  POSTS_EVENT,
-  PROFILE_EVENT,
-  FRIEND_EVENT,
-  BLOCKED_EVENT,
-  "storage",
-  "focus",
-];
-
-    events.forEach((event) => {
-      window.addEventListener(
-        event,
-        refreshData
-      );
-    });
+    window.addEventListener("focus", refreshData);
 
     return () => {
-      events.forEach((event) => {
-        window.removeEventListener(
-          event,
-          refreshData
-        );
-      });
+      active = false;
+      window.removeEventListener("focus", refreshData);
     };
-  }, []);
+  }, [currentAccount?.id]);
 
  // LẤY HỒ SƠ TÁC GIẢ
 const getAuthorProfile = (name, authorId) => {
-  const account = findAuthorAccount(
-    name,
-    authorId
-  );
-
-  return account
-    ? readProfile(account)
-    : {
-        fullName: name || "Người dùng",
-        avatar: "",
-      };
+  const found = posts.flatMap((post) => [post, post.originalPost])
+    .find((post) => post && String(post.authorId) === String(authorId));
+  return found?.authorProfile || { fullName: name || "Người dùng", avatar: found?.avatar || "" };
 };
 
 // HIỂN THỊ TÊN NGƯỜI DÙNG
@@ -346,25 +138,8 @@ const renderAvatar = (name, authorId) => {
 
 // ĐƯỜNG DẪN TRANG CÁ NHÂN
 const getProfileLink = (name, authorId) => {
-  const account = findAuthorAccount(
-    name,
-    authorId
-  );
-
-  if (account) {
-    if (
-      String(account.id) ===
-      String(currentAccount?.id)
-    ) {
-      return "/profile";
-    }
-
-    return `/profile?userId=${account.id}`;
-  }
-
-  return `/profile?user=${encodeURIComponent(
-    name || "Người dùng"
-  )}`;
+  if (String(authorId) === String(currentAccount?.id)) return "/profile";
+  return authorId != null ? `/profile?userId=${authorId}` : `/profile?user=${encodeURIComponent(name || "Người dùng")}`;
 };
 
   // TÌM KIẾM KHÔNG PHÂN BIỆT DẤU
@@ -401,92 +176,17 @@ const getProfileLink = (name, authorId) => {
   });
 
   // BỎ LƯU BÀI VIẾT THEO TÀI KHOẢN
-const handleUnsave = (id) => {
-  const account = getCurrentAccount();
-
-  // KIỂM TRA QUYỀN USER
-  if (
-    !account ||
-    !isUser(account) ||
-    String(account.id) !== String(currentAccount?.id)
-  ) {
-    alert("Bạn không có quyền thực hiện thao tác này!");
-    return;
-  }
-
+const handleUnsave = async (id) => {
   const confirmed = window.confirm(
     "Bạn có chắc chắn muốn bỏ lưu bài viết này không?"
   );
 
   if (!confirmed) return;
-
-  const userId = String(account.id);
-
   try {
-    const allPosts = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) || "[]"
-    );
-
-    if (!Array.isArray(allPosts)) {
-      alert("Dữ liệu bài viết không hợp lệ!");
-      return;
-    }
-
-    // KIỂM TRA BÀI VIẾT CÓ ĐƯỢC LƯU KHÔNG
-    const target = allPosts.find(
-      (post) =>
-        post &&
-        String(post.id) === String(id)
-    );
-
-    if (
-      !target ||
-      !getSavedBy(target).includes(userId)
-    ) {
-      setPosts(readSavedPosts(account));
-
-      alert("Bài viết này không còn trong danh sách đã lưu!");
-      return;
-    }
-
-    // CHỈ BỎ LƯU CỦA TÀI KHOẢN HIỆN TẠI
-    const updatedPosts = allPosts.map((post) => {
-      if (
-        !post ||
-        String(post.id) !== String(id)
-      ) {
-        return post;
-      }
-
-      const savedBy = getSavedBy(post);
-
-      return {
-        ...post,
-        savedBy: savedBy.filter(
-          (item) => item !== userId
-        ),
-      };
-    });
-
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(updatedPosts)
-    );
-
-    setPosts(readSavedPosts(account));
-
-    window.dispatchEvent(
-      new Event(POSTS_EVENT)
-    );
-
-    alert("Đã bỏ lưu bài viết!");
+    await toggleSave(id);
+    setPosts((items) => items.filter((post) => String(post.id) !== String(id)));
   } catch (error) {
-    console.error(
-      "Lỗi khi bỏ lưu bài viết:",
-      error
-    );
-
-    alert("Không thể cập nhật bài viết!");
+    alert(getApiErrorMessage(error));
   }
 };
 
@@ -550,7 +250,14 @@ const handleUnsave = (id) => {
         {/* DANH SÁCH BÀI VIẾT */}
         <div className="saved-content">
 
-          {posts.length === 0 ? (
+          {isLoading ? (
+            <p role="status">Đang tải bài viết đã lưu…</p>
+          ) : loadError ? (
+            <div className="saved-empty" role="alert">
+              <h2>Không tải được bài viết đã lưu</h2>
+              <p>{loadError}</p>
+            </div>
+          ) : posts.length === 0 ? (
             <div className="saved-empty">
               <div className="saved-empty-icon">
                 🔖

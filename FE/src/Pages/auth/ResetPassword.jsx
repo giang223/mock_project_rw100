@@ -2,17 +2,16 @@
 import { useState } from "react";
 import {
   Link,
-  useLocation,
   useNavigate,
+  useSearchParams,
 } from "react-router-dom";
+import { resetPassword } from "../../api/auth";
+import { getApiErrorMessage } from "../../api/http";
 
 function ResetPassword() {
   const navigate = useNavigate();
-  const location = useLocation();
-
-  // NHẬN THÔNG TIN TỪ FORGOT PASSWORD
-  const email = location.state?.email || "";
-  const isDemo = location.state?.demo === true;
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token") || "";
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] =
@@ -26,6 +25,7 @@ function ResetPassword() {
 
   const [errors, setErrors] = useState({});
   const [success, setSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // YÊU CẦU MẬT KHẨU
   const passwordRules = [
@@ -70,15 +70,6 @@ function ResetPassword() {
     return "#16a34a";
   };
 
-  // CHE MỘT PHẦN EMAIL
-  const maskEmail = (value) => {
-    if (!value.includes("@")) return value;
-
-    const [name, domain] = value.split("@");
-
-    return `${name.slice(0, 2)}***@${domain}`;
-  };
-
   // NHẬP MẬT KHẨU MỚI
   const handlePasswordChange = (event) => {
     setPassword(event.target.value);
@@ -87,6 +78,7 @@ function ResetPassword() {
       ...previous,
       password: "",
       confirmPassword: "",
+      form: "",
     }));
   };
 
@@ -97,6 +89,7 @@ function ResetPassword() {
     setErrors((previous) => ({
       ...previous,
       confirmPassword: "",
+      form: "",
     }));
   };
 
@@ -110,9 +103,9 @@ function ResetPassword() {
     } else if (password.length < 8) {
       newErrors.password =
         "Mật khẩu phải có ít nhất 8 ký tự.";
-    } else if (password.length > 128) {
+    } else if (password.length > 100) {
       newErrors.password =
-        "Mật khẩu không được vượt quá 128 ký tự.";
+        "Mật khẩu không được vượt quá 100 ký tự.";
     } else if (
       !passwordRules.every((rule) => rule.valid)
     ) {
@@ -134,32 +127,22 @@ function ResetPassword() {
   };
 
   // XỬ LÝ ĐẶT LẠI MẬT KHẨU
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (!email || !isDemo) return;
-
     if (!validateForm()) return;
-
-    /*
-      TODO: KẾT NỐI BACKEND
-
-      1. Nhận reset token từ liên kết email.
-      2. Gửi token và mật khẩu mới đến Backend.
-      3. Backend kiểm tra token và thời hạn.
-      4. Mã hóa mật khẩu mới.
-      5. Cập nhật mật khẩu trong Database.
-      6. Vô hiệu hóa reset token đã sử dụng.
-      7. Trả về kết quả.
-    */
-
-    // CHỈ KIỂM THỬ FRONTEND
-    setPassword("");
-    setConfirmPassword("");
-    setShowPassword(false);
-    setShowConfirmPassword(false);
-
-    setSuccess(true);
+    setIsSubmitting(true);
+    try {
+      await resetPassword({ token, newPassword: password, confirmPassword });
+      setSuccess(true);
+    } catch (resetError) {
+      setErrors((previous) => ({
+        ...previous,
+        form: getApiErrorMessage(resetError, "Liên kết không hợp lệ hoặc đã hết hạn."),
+      }));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // QUAY LẠI ĐĂNG NHẬP
@@ -194,7 +177,7 @@ function ResetPassword() {
         </p>
 
         {/* KIỂM TRA ĐIỀU KIỆN TRUY CẬP */}
-        {!email || !isDemo ? (
+        {!token ? (
           <div className="reset-invalid-request">
 
             <strong>
@@ -202,8 +185,7 @@ function ResetPassword() {
             </strong>
 
             <p>
-              Vui lòng quay lại trang Quên mật khẩu
-              để bắt đầu yêu cầu mới.
+              Hãy mở liên kết đặt lại mật khẩu được gửi trong email.
             </p>
 
             <Link to="/forgot-password">
@@ -213,18 +195,11 @@ function ResetPassword() {
           </div>
         ) : (
           <>
-            {/* EMAIL */}
-            <div className="reset-email-address">
-              {maskEmail(email)}
-            </div>
-
-            {/* THÔNG BÁO DEMO */}
-            <div className="reset-demo-note">
-              Chế độ kiểm thử Frontend.
-              Mật khẩu thật chưa được cập nhật.
-            </div>
-
             <form onSubmit={handleSubmit} noValidate>
+
+              {errors.form && (
+                <p className="reset-error-message" role="alert">{errors.form}</p>
+              )}
 
               {/* MẬT KHẨU MỚI */}
               <div className="reset-form-group">
@@ -247,7 +222,7 @@ function ResetPassword() {
                     }
                     placeholder="Nhập mật khẩu mới"
                     autoComplete="new-password"
-                    maxLength={128}
+                    maxLength={100}
                     value={password}
                     onChange={handlePasswordChange}
                     className={
@@ -365,7 +340,7 @@ function ResetPassword() {
                     }
                     placeholder="Nhập lại mật khẩu mới"
                     autoComplete="new-password"
-                    maxLength={128}
+                    maxLength={100}
                     value={confirmPassword}
                     onChange={handleConfirmChange}
                     className={
@@ -420,8 +395,9 @@ function ResetPassword() {
               <button
                 type="submit"
                 className="login-button reset-submit-button"
+                disabled={isSubmitting}
               >
-                Cập nhật mật khẩu
+                {isSubmitting ? "Đang cập nhật…" : "Cập nhật mật khẩu"}
               </button>
 
             </form>
@@ -455,19 +431,12 @@ function ResetPassword() {
             </div>
 
             <h2 id="resetModalTitle">
-              Kiểm thử thành công!
+              Đặt lại mật khẩu thành công
             </h2>
 
             <p>
-              Mật khẩu mới đáp ứng đầy đủ các
-              yêu cầu của hệ thống.
+              Bạn có thể đăng nhập bằng mật khẩu mới.
             </p>
-
-            <div className="reset-modal-note">
-              Đây là chế độ demo.
-              Mật khẩu tài khoản thật chưa được
-              thay đổi.
-            </div>
 
             <button
               type="button"

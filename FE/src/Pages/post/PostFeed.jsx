@@ -1,7 +1,12 @@
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { addNotification } from "../notification/notificationUtils";
+import { getApiErrorMessage } from "../../api/http";
+import { pageContent } from "../../api/apiResponse";
+import { toCommentView, toFriendView, toPostView, toStoryView } from "../../api/adapters";
+import * as postApi from "../../api/posts";
+import * as storyApi from "../../api/stories";
+import * as friendApi from "../../api/friends";
 
 import {
   MOCK_ACCOUNTS,
@@ -9,30 +14,10 @@ import {
   getCurrentAccount,
   readAccountData,
   saveAccountData,
-  getMockUsers,
-  getAccountById,
   isUser,
 } from "../../utils/mockAccounts";
 
-import {
-  FRIEND_EVENT,
-  BLOCKED_EVENT,
-  getFriendProfile,
-  getFriendStatus,
-  getMutualFriends,
-  getFriendIds,
-  getRelationship,
-  sendFriendRequest,
-  cancelFriendRequest,
-  isBlockedBetween,
-} from "../../utils/friendUtils";
 
-const POSTS_KEY = "miniSocialPosts";
-const REPORTS_KEY = "miniSocialReports";
-const POSTS_EVENT = "miniSocialPostsUpdated";
-const REPORTS_EVENT = "miniSocialReportsUpdated";
-
-const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
 
 const HIDDEN_KEY = "miniSocialHiddenSuggestions";
@@ -41,37 +26,8 @@ const HIDDEN_KEY = "miniSocialHiddenSuggestions";
 function readProfile(
   account = getCurrentAccount() || MOCK_ACCOUNTS[0]
 ) {
-  let legacyProfile = {};
-
-  if (String(account.id) === "1") {
-    try {
-      legacyProfile = JSON.parse(
-        localStorage.getItem(PROFILE_KEY) || "{}"
-      ) || {};
-    } catch {
-      legacyProfile = {};
-    }
-  }
-
-  return {
-    ...account,
-    ...legacyProfile,
-    ...readAccountData(PROFILE_KEY, {}, account.id),
-
-    id: account.id,
-    username: account.username,
-    email: account.email,
-  };
+  return account;
 }
-// TÌM TÀI KHOẢN THEO TÁC GIẢ
-function findAuthorAccount(name, authorId) {
-  return MOCK_ACCOUNTS.find((account) =>
-    authorId != null
-      ? String(account.id) === String(authorId)
-      : account.fullName === name
-  );
-}
-
 // KIỂM TRA QUYỀN SỞ HỮU
 function isOwnedBy(item, account) {
   if (!item || !account) return false;
@@ -81,101 +37,6 @@ function isOwnedBy(item, account) {
   }
 
   return item.author === account.fullName;
-}
-
-// DỮ LIỆU BÀI VIẾT MẪU
-const samplePosts = [
-  {
-    id: 1,
-    authorId: 1,
-    author: "Nguyễn Văn A",
-    content:
-      "Xin chào mọi người! Đây là bài viết đầu tiên của mình trên MiniSocial. Rất vui được kết nối với tất cả mọi người!",
-    createdAt: "2 giờ trước",
-    isSaved: false,
-    isMine: true,
-    liked: false,
-    likeCount: 12,
-    comments: [],
-    image: "",
-  },
-  {
-    id: 2,
-    authorId: 2,
-    author: "Trần Thị B",
-    content:
-      "Chúc mọi người một ngày mới thật vui vẻ và nhiều năng lượng nhé! 🌸",
-    createdAt: "3 giờ trước",
-    isSaved: false,
-    isMine: false,
-    liked: false,
-    likeCount: 8,
-    comments: [],
-    image: "",
-  },
-  {
-    id: 3,
-    authorId: 3,
-    author: "Lê Văn C",
-    content:
-      "Hôm nay mình vừa hoàn thành một mục tiêu nhỏ. Cố gắng mỗi ngày một chút! 💪",
-    createdAt: "Hôm qua",
-    isSaved: false,
-    isMine: false,
-    liked: false,
-    likeCount: 25,
-    comments: [],
-    image: "",
-  },
-];
-
-// ĐỌC BÀI VIẾT
-function getPosts() {
-  try {
-    const saved = localStorage.getItem(POSTS_KEY);
-
-    if (saved === null) {
-      return samplePosts;
-    }
-
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    console.error("Không thể đọc bài viết:", error);
-    return [];
-  }
-}
-
-// ĐỌC DANH SÁCH BÁO CÁO
-function getReports() {
-  try {
-    const saved = localStorage.getItem(REPORTS_KEY);
-    const reports = saved ? JSON.parse(saved) : [];
-
-    return Array.isArray(reports) ? reports : [];
-  } catch (error) {
-    console.error("Không thể đọc báo cáo:", error);
-    return [];
-  }
-}
-
-// ĐỌC DANH SÁCH STORY
-function getStories() {
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem("miniSocialStories") || "[]"
-    );
-
-    if (!Array.isArray(saved)) return [];
-
-    return saved.filter(
-      (story) =>
-        !story.expiresAt ||
-        new Date(story.expiresAt).getTime() > Date.now()
-    );
-  } catch {
-    return [];
-  }
 }
 
 function formatPostTime(value) {
@@ -240,13 +101,9 @@ const hasUserPermission = () => {
 // KIỂM TRA QUYỀN TƯƠNG TÁC VỚI NGƯỜI DÙNG
 const canInteractWithUser = (user) => {
   if (!hasUserPermission()) return false;
-
-  const target = getAccountById(user?.id);
-
   return (
-    isUser(target) &&
-    String(target.id) !== String(CURRENT_USER_ID) &&
-    !isBlockedBetween(CURRENT_USER_ID, target.id)
+    user?.id != null &&
+    String(user.id) !== String(CURRENT_USER_ID)
   );
 };
 
@@ -280,20 +137,12 @@ useEffect(() => {
 
 // LẤY HỒ SƠ CỦA TÁC GIẢ
 const getAuthorProfile = (name, authorId) => {
-  const account = findAuthorAccount(name, authorId);
-
-  if (!account) {
-    return {
-      fullName: name || "Người dùng",
-      avatar: "",
-    };
-  }
-
-  if (String(account.id) === String(CURRENT_USER_ID)) {
+  if (String(authorId) === String(CURRENT_USER_ID)) {
     return profile;
   }
-
-  return readProfile(account);
+  const matches = posts.flatMap((post) => [post, post.originalPost].filter(Boolean));
+  const author = matches.find((post) => String(post.authorId) === String(authorId))?.authorProfile;
+  return author || { fullName: name || "Người dùng", avatar: "" };
 };
 
 // HIỂN THỊ TÊN TÁC GIẢ
@@ -346,116 +195,38 @@ const renderAvatar = (name, authorId) => {
 };
 
   // DANH SÁCH BÀI VIẾT
-const [posts, setPosts] = useState(getPosts);
-// CẬP NHẬT VÀ LƯU BÀI VIẾT
-const updatePosts = (updater) => {
-  if (!hasUserPermission()) {
-    alert("Bạn không có quyền thực hiện chức năng này!");
-    return false;
-  }
-
+const [posts, setPosts] = useState([]);
+const [feedLoading, setFeedLoading] = useState(true);
+const [feedError, setFeedError] = useState("");
+const refreshFeed = useCallback(async () => {
+  setFeedLoading(true);
+  setFeedError("");
   try {
-    const currentPosts = getPosts();
-
-    const updatedPosts =
-      typeof updater === "function"
-        ? updater(currentPosts)
-        : updater;
-
-    localStorage.setItem(
-      POSTS_KEY,
-      JSON.stringify(updatedPosts)
-    );
-
-    setPosts(updatedPosts);
-
-    window.dispatchEvent(
-      new Event(POSTS_EVENT)
-    );
-
-    return true;
+    const page = await postApi.getFeed({ page: 0, size: 20 });
+    setPosts(pageContent(page).map((post) => toPostView(post, CURRENT_USER_ID)).filter(Boolean));
   } catch (error) {
-    console.error("Không thể lưu bài viết:", error);
-
-    alert(
-      "Không thể lưu bài viết. Có thể bộ nhớ đã đầy!"
-    );
-
-    return false;
+    setFeedError(getApiErrorMessage(error));
+  } finally {
+    setFeedLoading(false);
   }
-};
-
+}, [CURRENT_USER_ID]);
 // KIỂM TRA QUYỀN XEM BÀI VIẾT
 const canViewPost = (post) => {
-  if (!post || !hasUserPermission()) {
-    return false;
-  }
-
-  const author = findAuthorAccount(
-    post.author,
-    post.authorId
-  );
-
-  // KHÔNG HIỂN THỊ BÀI VIẾT CỦA ADMIN
-  if (author && !isUser(author)) {
-    return false;
-  }
-
-  // BÀI VIẾT CỦA CHÍNH MÌNH
-  if (isOwnPost(post)) return true;
-
-  // KIỂM TRA CHẶN
-  if (
-    author &&
-    isBlockedBetween(CURRENT_USER_ID, author.id)
-  ) {
-    return false;
-  }
-
-  // BÀI VIẾT RIÊNG TƯ
-  if (post.privacy === "private") {
-    return false;
-  }
-
-  // BÀI VIẾT DÀNH CHO BẠN BÈ
-  if (post.privacy === "friends") {
-    return Boolean(
-      author &&
-      getFriendIds(CURRENT_USER_ID)
-        .includes(String(author.id))
-    );
-  }
-
-  // BÀI VIẾT CÔNG KHAI
-  return !post.privacy || post.privacy === "public";
+  // Feed and profile endpoints already apply visibility and block rules server-side.
+  return Boolean(post && hasUserPermission());
 };
 
 // KIỂM TRA QUYỀN XEM BÀI VIẾT CHIA SẺ
-const canViewFeedPost = (post, allPosts = posts) => {
+const canViewFeedPost = (post) => {
   if (!canViewPost(post)) {
     return false;
   }
-
-  if (!post.isShared) {
-    return true;
-  }
-
-  const original = allPosts.find(
-    (item) =>
-      String(item.id) ===
-      String(post.originalPost?.id)
-  );
-
-  return Boolean(
-    original &&
-    !original.isShared &&
-    canViewPost(original)
-  );
+  return !post.isShared || Boolean(post.originalPost);
 };
 
 // ĐỒNG BỘ NỘI DUNG BÀI VIẾT GỐC
-const resolveFeedPost = (post, allPosts = posts) => {
-  if (!canViewFeedPost(post, allPosts)) {
+const resolveFeedPost = (post) => {
+  if (!canViewFeedPost(post)) {
     return null;
   }
 
@@ -463,15 +234,9 @@ const resolveFeedPost = (post, allPosts = posts) => {
     return post;
   }
 
-  const original = allPosts.find(
-    (item) =>
-      String(item.id) ===
-      String(post.originalPost?.id)
-  );
-
   return {
     ...post,
-    originalPost: original,
+    originalPost: post.originalPost,
   };
 };
 
@@ -481,20 +246,14 @@ const visiblePosts = posts
   .filter(Boolean);
 
 // DANH SÁCH STORY
-const [stories, setStories] = useState(getStories);
+const [stories, setStories] = useState([]);
 
 // XEM STORY
 const [activeStoryId, setActiveStoryId] = useState(null);
 
 // TÌM TÀI KHOẢN ĐĂNG TIN
 const getStoryAccount = (story) => {
-  return findAuthorAccount(
-    story.author ||
-      (story.name === "Bạn"
-        ? MOCK_ACCOUNTS[0].fullName
-        : story.name),
-    story.authorId
-  );
+  return story?.authorProfile || { id: story?.authorId, fullName: story?.author || story?.name, role: "USER" };
 };
 
 // KIỂM TRA TIN CỦA MÌNH
@@ -513,13 +272,6 @@ const canViewStory = (story) => {
     return false;
   }
 
-  const account = getStoryAccount(story);
-
-  // KHÔNG HIỂN THỊ TIN CỦA ADMIN
-  if (!isUser(account)) {
-    return false;
-  }
-
   // KIỂM TRA TIN HẾT HẠN
   if (
     story.expiresAt &&
@@ -528,38 +280,8 @@ const canViewStory = (story) => {
     return false;
   }
 
-  // TIN CỦA CHÍNH MÌNH
-  if (isOwnStory(story)) {
-    return true;
-  }
-
-  // KIỂM TRA CHẶN
-  if (
-    isBlockedBetween(
-      CURRENT_USER_ID,
-      account.id
-    )
-  ) {
-    return false;
-  }
-
-  // TIN RIÊNG TƯ
-  if (story.privacy === "private") {
-    return false;
-  }
-
-  // TIN DÀNH CHO BẠN BÈ
-  if (story.privacy === "friends") {
-    return getFriendIds(CURRENT_USER_ID)
-      .map(String)
-      .includes(String(account.id));
-  }
-
-  // TIN CÔNG KHAI
-  return (
-    !story.privacy ||
-    story.privacy === "public"
-  );
+  // Visibility and blocking rules are enforced by the authenticated API.
+  return true;
 };
 
 // KIỂM TRA ĐÃ XEM TIN
@@ -587,58 +309,21 @@ const activeStory =
   visibleStories[activeStoryIndex] || null;
 
 // MỞ STORY
-const handleViewStory = (story) => {
-  const current = getStories();
-
-  const target = current.find(
-    (item) => item.id === story.id
-  );
-
-  if (!target || !canViewStory(target)) {
+const handleViewStory = async (story) => {
+  if (!story || !canViewStory(story)) {
     alert("Tin không còn khả dụng!");
     return;
   }
 
-  setActiveStoryId(target.id);
-
-  if (isOwnStory(target)) return;
-
+  setActiveStoryId(story.id);
+  if (isOwnStory(story)) return;
   try {
-    const updated = current.map((item) => {
-      if (item.id !== target.id) {
-        return item;
-      }
-
-      const viewedBy = Array.isArray(item.viewedBy)
-        ? item.viewedBy.map(String)
-        : [];
-
-      return {
-        ...item,
-        viewedBy: [
-          ...new Set([
-            ...viewedBy,
-            String(CURRENT_USER_ID),
-          ]),
-        ],
-      };
-    });
-
-    localStorage.setItem(
-      "miniSocialStories",
-      JSON.stringify(updated)
-    );
-
-    setStories(updated);
-
-    window.dispatchEvent(
-      new Event("miniSocialStoriesUpdated")
-    );
+    await storyApi.recordStoryView(story.id);
+    setStories((items) => items.map((item) => String(item.id) === String(story.id)
+      ? { ...item, viewedBy: [...new Set([...(item.viewedBy || []).map(String), String(CURRENT_USER_ID)])] }
+      : item));
   } catch (error) {
-    console.error(
-      "Không thể cập nhật trạng thái tin:",
-      error
-    );
+    alert(getApiErrorMessage(error));
   }
 };
 
@@ -669,37 +354,13 @@ const handleNextStory = () => {
 
 // ĐỒNG BỘ STORY
 useEffect(() => {
-  const refreshStories = () => {
-    setStories(getStories());
-  };
-
-  refreshStories();
-
-  window.addEventListener(
-    "miniSocialStoriesUpdated",
-    refreshStories
-  );
-
-  window.addEventListener(
-    "storage",
-    refreshStories
-  );
-
-  const timer = setInterval(refreshStories, 1000);
-
-  return () => {
-    clearInterval(timer);
-
-    window.removeEventListener(
-      "miniSocialStoriesUpdated",
-      refreshStories
-    );
-
-    window.removeEventListener(
-      "storage",
-      refreshStories
-    );
-  };
+  let active = true;
+  storyApi.getStories({ page: 0, size: 100 })
+    .then((page) => {
+      if (active) setStories(pageContent(page).map((story) => toStoryView(story, CURRENT_USER_ID)));
+    })
+    .catch((error) => { if (active) setFeedError(getApiErrorMessage(error)); });
+  return () => { active = false; };
 }, []);
 
   // ĐĂNG BÀI
@@ -726,6 +387,7 @@ const feelings = [
   "😋 Đói bụng",
 ];
   const [imagePreviews, setImagePreviews] = useState([]);
+  const [postFiles, setPostFiles] = useState([]);
   const [editingImages, setEditingImages] = useState([]);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState(null);
@@ -805,8 +467,23 @@ const reportReasons = [
 ];
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-
-  const [, setFriendRefresh] = useState(0);
+  const [visibleContacts, setVisibleContacts] = useState([]);
+  const [feedSuggestions, setFeedSuggestions] = useState([]);
+  const refreshSocialGraph = useCallback(async () => {
+    try {
+      const [friendsPage, suggestionsPage] = await Promise.all([
+        friendApi.getFriends({ page: 0, size: 100 }),
+        friendApi.getFriendSuggestions({ page: 0, size: 100 }),
+      ]);
+      setVisibleContacts(pageContent(friendsPage).map((item) => toFriendView(item, "accepted")).filter(Boolean));
+      setFeedSuggestions(pageContent(suggestionsPage).map((item) => {
+        const user = toFriendView(item, "none");
+        return { ...user, name: user.fullName, friendshipStatus: String(item.friendshipStatus || item.status || "none").toLowerCase(), mutualFriends: Number(item.mutualFriendCount || user?.mutualFriends || 0) };
+      }));
+    } catch (error) {
+      setFeedError(getApiErrorMessage(error));
+    }
+  }, []);
 
 const [hiddenSuggestions, setHiddenSuggestions] =
   useState(() => {
@@ -821,84 +498,23 @@ const [hiddenSuggestions, setHiddenSuggestions] =
       : [];
   });
 
-// ĐỒNG BỘ BẠN BÈ VÀ NGƯỜI DÙNG
+// Load real friends and server-ranked suggestions.
 useEffect(() => {
-  const refreshFriends = () => {
-    const data = readAccountData(
-      HIDDEN_KEY,
-      [],
-      CURRENT_USER_ID
-    );
-
-    setHiddenSuggestions(
-      Array.isArray(data)
-        ? data.map(String)
-        : []
-    );
-
-    setFriendRefresh((previous) => previous + 1);
-  };
-
-  const events = [
-    FRIEND_EVENT,
-    BLOCKED_EVENT,
-    PROFILE_EVENT,
-    ACCOUNT_EVENT,
-    "storage",
-    "focus",
-  ];
-
-  events.forEach((event) => {
-    window.addEventListener(event, refreshFriends);
-  });
-
-  return () => {
-    events.forEach((event) => {
-      window.removeEventListener(event, refreshFriends);
-    });
-  };
-}, [CURRENT_USER_ID]);
+  refreshSocialGraph();
+  const onFocus = () => refreshSocialGraph();
+  window.addEventListener("focus", onFocus);
+  return () => window.removeEventListener("focus", onFocus);
+}, [refreshSocialGraph]);
 
 // TRẠNG THÁI KẾT BẠN
 const getFeedFriendStatus = (user) =>
-  getFriendStatus(user.id);
-
-// DANH SÁCH NGƯỜI LIÊN HỆ
-const visibleContacts = (
-  hasUserPermission() ? getMockUsers() : []
-)
-  .filter(
-    (account) =>
-      String(account.id) !== String(CURRENT_USER_ID) &&
-      !isBlockedBetween(
-        CURRENT_USER_ID,
-        account.id
-      )
-  )
-  .map((account) => {
-    const user = getFriendProfile(account.id);
-
-    if (!user) return null;
-
-    return {
-      ...user,
-      name: user.fullName,
-      mutualFriends: getMutualFriends(
-        CURRENT_USER_ID,
-        account.id
-      ),
-    };
-  })
-  .filter(Boolean);
+  user.friendshipStatus || user.status || "none";
 
 // GỢI Ý KẾT BẠN
-const visibleSuggestions = visibleContacts
+const visibleSuggestions = feedSuggestions
   .filter(
     (user) =>
-      !hiddenSuggestions.includes(String(user.id)) &&
-      ["none", "sent"].includes(
-        getFeedFriendStatus(user)
-      )
+      !hiddenSuggestions.includes(String(user.id))
   )
   .sort(
     (a, b) => b.mutualFriends - a.mutualFriends
@@ -911,7 +527,6 @@ const visibleSuggestions = visibleContacts
 
   // BÌNH LUẬN
   const [commentInputs, setCommentInputs] = useState({});
-  const [openComments, setOpenComments] = useState({});
 
   // CHỈNH SỬA BÌNH LUẬN
   const [editingCommentId, setEditingCommentId] = useState(null);
@@ -944,81 +559,32 @@ useEffect(() => {
   const targetId = searchParams.get("postId");
 
   if (!targetId) return;
-
-  const currentPosts = getPosts();
-
-  const target = currentPosts.find(
+  const target = posts.find(
     (post) => String(post.id) === targetId
   );
-
- const resolved = resolveFeedPost(
-  target,
-  currentPosts
-);
-
-setSelectedPost(resolved);
-}, [searchParams, CURRENT_USER_ID]);
+  if (target) setSelectedPost(resolveFeedPost(target, posts));
+}, [searchParams, CURRENT_USER_ID, posts]);
 
   // ĐỒNG BỘ BÀI VIẾT GIỮA CÁC TÀI KHOẢN
 useEffect(() => {
-  const refreshPosts = () => {
-    setPosts(getPosts());
-  };
+  refreshFeed();
+  const onFocus = () => refreshFeed();
+  window.addEventListener("focus", onFocus);
+  return () => window.removeEventListener("focus", onFocus);
+}, [refreshFeed]);
 
-  const handleStorage = (event) => {
-    if (
-      event.key === POSTS_KEY ||
-      event.key === null
-    ) {
-      refreshPosts();
-    }
-  };
-
-  window.addEventListener(
-    POSTS_EVENT,
-    refreshPosts
-  );
-
-  window.addEventListener(
-    "storage",
-    handleStorage
-  );
-
-  window.addEventListener(
-    "focus",
-    refreshPosts
-  );
-
-  return () => {
-    window.removeEventListener(
-      POSTS_EVENT,
-      refreshPosts
-    );
-
-    window.removeEventListener(
-      "storage",
-      handleStorage
-    );
-
-    window.removeEventListener(
-      "focus",
-      refreshPosts
-    );
-  };
-}, []);
-
-  // ĐỌC NHIỀU ẢNH (TỐI ĐA 10 ẢNH/BÀI THEO SRS)
+  // Read preview data for files, but send the original files as multipart.
   const readImageFiles = (files, callback, current = []) => {
     const selected = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
     if (selected.length !== Array.from(files || []).length) {
       alert("Chỉ được chọn file hình ảnh!");
     }
-    if (selected.some((file) => file.size > 5 * 1024 * 1024)) {
-      alert("Mỗi ảnh không được vượt quá 5MB!");
+    if (selected.some((file) => file.size > 10 * 1024 * 1024)) {
+      alert("Mỗi ảnh không được vượt quá 10MB!");
       return;
     }
-    if (current.length + selected.length > 10) {
-      alert("Mỗi bài viết được đính kèm tối đa 10 ảnh!");
+    if (current.length + selected.length > 4) {
+      alert("Backend hiện hỗ trợ tối đa 4 tệp media cho mỗi bài viết.");
       return;
     }
     Promise.all(selected.map((file) => new Promise((resolve, reject) => {
@@ -1031,63 +597,59 @@ useEffect(() => {
   };
 
   const handleImageChange = (e) => {
-    readImageFiles(e.target.files, setImagePreviews, imagePreviews);
+    const selected = Array.from(e.target.files || []);
+    if (postFiles.length + selected.length > 4) {
+      alert("Backend hiện hỗ trợ tối đa 4 tệp media cho mỗi bài viết.");
+      e.target.value = "";
+      return;
+    }
+    if (selected.some((file) => file.size > 10 * 1024 * 1024)) {
+      alert("Mỗi ảnh không được vượt quá 10MB.");
+      e.target.value = "";
+      return;
+    }
+    setPostFiles((current) => [...current, ...selected]);
+    readImageFiles(selected, setImagePreviews, imagePreviews);
     e.target.value = "";
   };
 
   const handleRemoveImage = (index) => {
     setImagePreviews((prev) => prev.filter((_, i) => i !== index));
+    setPostFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   // ĐĂNG BÀI VIẾT
-  const handleCreatePost = (e) => {
+  const handleCreatePost = async (e) => {
     e.preventDefault();
 
     if (
   !content.trim() &&
-  imagePreviews.length === 0 &&
-  !feeling &&
-  !location.trim()
+  postFiles.length === 0 &&
+  !feeling
 ) {
       alert("Vui lòng nhập nội dung hoặc chọn hình ảnh!");
       return;
     }
 
-    const newPost = {
-  id: Date.now(),
-
-  authorId: CURRENT_USER_ID,
-  author: CURRENT_USER,
-  authorUsername: currentAccount.username,
-
-  content: content.trim(),
-  feeling: feeling,
-  location: location.trim(),
-
-  image: imagePreviews[0] || "",
-  images: imagePreviews,
-
-  createdAt: new Date().toISOString(),
-
-  privacy: privacy,
-
-  likedBy: [],
-  savedBy: [],
-
-  likeCount: 0,
-  comments: [],
-};
-
-    const success = updatePosts((prevPosts) => [
-  newPost,
-  ...prevPosts,
-]);
-
-if (!success) return;
+    try {
+      if (location.trim()) alert("Địa điểm chưa được lưu vì BE hiện chưa có trường/API cho địa điểm.");
+      const payload = {
+        content: content.trim(),
+        feeling: feeling || null,
+        visibility: ({ public: "PUBLIC", friends: "FRIENDS", private: "PRIVATE" })[privacy] || "PUBLIC",
+      };
+      if (postFiles.length) await postApi.createPostWithMedia({ ...payload, files: postFiles });
+      else await postApi.createPost(payload);
+      await refreshFeed();
+    } catch (error) {
+      alert(getApiErrorMessage(error));
+      return;
+    }
 
 setPrivacy("public");
 setContent("");
     setImagePreviews([]);
+    setPostFiles([]);
     setFeeling("");
     setLocation("");
     setShowFeelingPicker(false);
@@ -1114,8 +676,8 @@ const handleEdit = (post) => {
 };
 
   // LƯU CHỈNH SỬA BÀI VIẾT
-const handleUpdatePost = (id) => {
-  const currentPost = getPosts().find(
+const handleUpdatePost = async (id) => {
+  const currentPost = posts.find(
     (post) => String(post.id) === String(id)
   );
 
@@ -1135,24 +697,17 @@ const handleUpdatePost = (id) => {
     return;
   }
 
-  const success = updatePosts((prevPosts) =>
-    prevPosts.map((post) =>
-      String(post.id) === String(id)
-        ? {
-            ...post,
-
-            content: editingContent.trim(),
-            images: editingImages,
-            image: editingImages[0] || "",
-
-            privacy: editingPrivacy,
-            updatedAt: new Date().toISOString(),
-          }
-        : post
-    )
-  );
-
-  if (!success) return;
+  try {
+    await postApi.updatePost(id, {
+      content: editingContent.trim(),
+      visibility: ({ public: "PUBLIC", friends: "FRIENDS", private: "PRIVATE" })[editingPrivacy],
+      feeling: currentPost.feeling || null,
+    });
+    await refreshFeed();
+  } catch (error) {
+    alert(getApiErrorMessage(error));
+    return;
+  }
 
   setEditingId(null);
   setEditingContent("");
@@ -1169,7 +724,7 @@ const handleCancelEdit = () => {
 };
 
   // XÓA BÀI VIẾT
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     const post = posts.find(
   (item) => item.id === id
 );
@@ -1184,157 +739,43 @@ if (!post || !isOwnPost(post)) {
 
     if (!confirmed) return;
 
-    updatePosts((prevPosts) =>
-      prevPosts.filter((post) => post.id !== id)
-    );
+    try {
+      await postApi.deletePost(id);
+      await refreshFeed();
+    } catch (error) { alert(getApiErrorMessage(error)); }
   };
 
   // ĐỌC DANH SÁCH NGƯỜI TƯƠNG TÁC
-const getInteractionIds = (post, field, legacyField) => {
-  if (Array.isArray(post[field])) {
-    return post[field].map(String);
-  }
-
-  // DỮ LIỆU CŨ THUỘC TÀI KHOẢN SỐ 1
-  return post[legacyField] ? ["1"] : [];
-};
-
 // KIỂM TRA ĐÃ LƯU BÀI VIẾT
-const isPostSaved = (post) =>
-  getInteractionIds(post, "savedBy", "isSaved")
-    .includes(String(CURRENT_USER_ID));
+const isPostSaved = (post) => Boolean(post.saved);
 
 // KIỂM TRA ĐÃ LIKE
-const isPostLiked = (post) =>
-  getInteractionIds(post, "likedBy", "liked")
-    .includes(String(CURRENT_USER_ID));
+const isPostLiked = (post) => Boolean(post.currentUserReaction || post.liked);
 
-    // GỬI THÔNG BÁO CHO CHỦ BÀI VIẾT
-const notifyPostOwner = (
-  post,
-  type,
-  message,
-  extra = {}
-) => {
-  const owner = findAuthorAccount(
-    post.author,
-    post.authorId
-  );
-
-  if (!owner) return;
-
-  // KHÔNG GỬI THÔNG BÁO CHO CHÍNH MÌNH
-  if (
-    String(owner.id) === String(CURRENT_USER_ID)
-  ) {
-    return;
-  }
-
-  // KHÔNG GỬI NẾU HAI TÀI KHOẢN ĐÃ CHẶN NHAU
-  if (
-    isBlockedBetween(CURRENT_USER_ID, owner.id)
-  ) {
-    return;
-  }
-
-  addNotification({
-    ...extra,
-    type,
-    senderId: CURRENT_USER_ID,
-    receiverId: owner.id,
-    message,
-    postId: post.id,
-  });
-};
-
-// LƯU HOẶC BỎ LƯU BÀI VIẾT
-const handleSavePost = (id) => {
-  updatePosts((previous) =>
-    previous.map((post) => {
-      if (post.id !== id) return post;
-
-      const userId = String(CURRENT_USER_ID);
-
-      const savedBy = getInteractionIds(
-        post,
-        "savedBy",
-        "isSaved"
-      );
-
-      return {
-        ...post,
-        savedBy: savedBy.includes(userId)
-          ? savedBy.filter((item) => item !== userId)
-          : [...savedBy, userId],
-      };
-    })
-  );
+// Save state is owned by the server.
+const handleSavePost = async (id) => {
+  try {
+    await postApi.toggleSave(id);
+    await refreshFeed();
+  } catch (error) { alert(getApiErrorMessage(error)); }
 };
 
 // THÍCH HOẶC BỎ THÍCH
-const handleLike = (id) => {
-  const currentPosts = getPosts();
-
-  const target = currentPosts.find(
+const handleLike = async (id) => {
+  const target = posts.find(
     (post) => String(post.id) === String(id)
   );
 
-  if (!target || !canViewFeedPost(target, currentPosts)) {
+  if (!target || !canViewFeedPost(target, posts)) {
     alert("Bài viết không còn khả dụng!");
     return;
   }
-
-  const userId = String(CURRENT_USER_ID);
-
-  const alreadyLiked = isPostLiked(target);
-
-  const success = updatePosts((previous) =>
-    previous.map((post) => {
-      if (String(post.id) !== String(id)) {
-        return post;
-      }
-
-      const likedBy = getInteractionIds(
-        post,
-        "likedBy",
-        "liked"
-      );
-
-      const currentCount = Number(post.likeCount) || 0;
-
-      return {
-        ...post,
-
-        likedBy: alreadyLiked
-          ? likedBy.filter((item) => item !== userId)
-          : [...new Set([...likedBy, userId])],
-
-        likeCount: alreadyLiked
-          ? Math.max(0, currentCount - 1)
-          : currentCount + 1,
-      };
-    })
-  );
-
-  if (!success) return;
-
-  // CHỈ GỬI THÔNG BÁO KHI THÍCH
-  if (!alreadyLiked) {
-    notifyPostOwner(
-      target,
-      "like",
-      "đã thích bài viết của bạn."
-    );
-  }
+  try {
+    if (isPostLiked(target)) await postApi.removeReaction(id);
+    else await postApi.setReaction(id, "LIKE");
+    await refreshFeed();
+  } catch (error) { alert(getApiErrorMessage(error)); }
 };
-
-  // HIỆN HOẶC ẨN BÌNH LUẬN
-  const handleToggleComments = (id) => {
-    setOpenComments((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
 
   // NHẬP BÌNH LUẬN
   const handleCommentChange = (id, value) => {
@@ -1345,7 +786,7 @@ const handleLike = (id) => {
   };
 
   // GỬI BÌNH LUẬN
-const handleAddComment = (id) => {
+const handleAddComment = async (id) => {
   const commentText = commentInputs[id]?.trim();
 
   if (!commentText) {
@@ -1353,57 +794,27 @@ const handleAddComment = (id) => {
     return;
   }
 
-  const currentPosts = getPosts();
-
-  const post = currentPosts.find(
+  const post = posts.find(
     (item) => String(item.id) === String(id)
   );
 
-  if (!post || !canViewFeedPost(post, currentPosts)) {
+  if (!post || !canViewFeedPost(post, posts)) {
     alert("Bài viết không còn khả dụng!");
     return;
   }
 
-  const newComment = {
-    id: crypto.randomUUID(),
-
-    authorId: CURRENT_USER_ID,
-    author: CURRENT_USER,
-    authorUsername: currentAccount.username,
-
-    content: commentText,
-    createdAt: new Date().toISOString(),
-  };
-
-  const success = updatePosts((prevPosts) =>
-    prevPosts.map((item) =>
-      String(item.id) === String(id)
-        ? {
-            ...item,
-
-            comments: [
-              ...(Array.isArray(item.comments)
-                ? item.comments
-                : []),
-
-              newComment,
-            ],
-          }
-        : item
-    )
-  );
-
-  if (!success) return;
-
-  // GỬI THÔNG BÁO CHO CHỦ BÀI VIẾT
-  notifyPostOwner(
-    post,
-    "comment",
-    "đã bình luận về bài viết của bạn.",
-    {
-      commentId: newComment.id,
-    }
-  );
+  try {
+    const newComment = toCommentView(await postApi.addComment(id, commentText));
+    setPosts((current) => current.map((item) => String(item.id) === String(id)
+      ? { ...item, comments: [...(item.comments || []), newComment], commentCount: Number(item.commentCount || 0) + 1 }
+      : item));
+    setSelectedPost((current) => current && String(current.id) === String(id)
+      ? { ...current, comments: [...(current.comments || []), newComment], commentCount: Number(current.commentCount || 0) + 1 }
+      : current);
+  } catch (error) {
+    alert(getApiErrorMessage(error));
+    return;
+  }
 
   // XÓA NỘI DUNG Ô NHẬP
   setCommentInputs((prev) => ({
@@ -1422,7 +833,7 @@ const handleAddComment = (id) => {
   };
 
  // LƯU BÌNH LUẬN ĐÃ CHỈNH SỬA
-const handleUpdateComment = (postId, commentId) => {
+const handleUpdateComment = async (postId, commentId) => {
   const post = posts.find(
     (item) => item.id === postId
   );
@@ -1440,30 +851,14 @@ const handleUpdateComment = (postId, commentId) => {
       return;
     }
 
-    updatePosts((prevPosts) =>
-      prevPosts.map((post) =>
-        post.id === postId
-          ? {
-              ...post,
-              comments: (
-                Array.isArray(post.comments)
-                  ? post.comments
-                  : []
-              ).map((comment) =>
-                comment.id === commentId
-                  ? {
-                      ...comment,
-                      content: editingCommentContent.trim(),
-                    }
-                  : comment
-              ),
-            }
-          : post
-      )
-    );
-
-    setEditingCommentId(null);
-    setEditingCommentContent("");
+    try {
+      const updated = toCommentView(await postApi.updateComment(postId, commentId, editingCommentContent.trim()));
+      const updateList = (post) => ({ ...post, comments: (post.comments || []).map((item) => String(item.id) === String(commentId) ? updated : item) });
+      setPosts((current) => current.map((post) => String(post.id) === String(postId) ? updateList(post) : post));
+      setSelectedPost((current) => current && String(current.id) === String(postId) ? updateList(current) : current);
+      setEditingCommentId(null);
+      setEditingCommentContent("");
+    } catch (error) { alert(getApiErrorMessage(error)); }
   };
 
   // HỦY CHỈNH SỬA BÌNH LUẬN
@@ -1473,7 +868,7 @@ const handleUpdateComment = (postId, commentId) => {
   };
 
   // XÓA BÌNH LUẬN
-  const handleDeleteComment = (postId, commentId) => {
+  const handleDeleteComment = async (postId, commentId) => {
   const post = posts.find(
     (item) => item.id === postId
   );
@@ -1492,37 +887,25 @@ const handleUpdateComment = (postId, commentId) => {
 
     if (!confirmed) return;
 
-    updatePosts((prevPosts) =>
-      prevPosts.map((post) =>
-        post.id === postId
-          ? {
-              ...post,
-              comments: (
-                Array.isArray(post.comments)
-                  ? post.comments
-                  : []
-              ).filter(
-                (comment) => comment.id !== commentId
-              ),
-            }
-          : post
-      )
-    );
+    try {
+      await postApi.deleteComment(postId, commentId);
+      const updateList = (post) => ({ ...post, comments: (post.comments || []).filter((item) => String(item.id) !== String(commentId)), commentCount: Math.max(0, Number(post.commentCount || 0) - 1) });
+      setPosts((current) => current.map((post) => String(post.id) === String(postId) ? updateList(post) : post));
+      setSelectedPost((current) => current && String(current.id) === String(postId) ? updateList(current) : current);
+    } catch (error) { alert(getApiErrorMessage(error)); }
   };
 
   
   // MỞ POPUP CHIA SẺ
 const handleShare = (post) => {
-  const currentPosts = getPosts();
-
-  const target = currentPosts.find(
+  const target = posts.find(
     (item) =>
       String(item.id) === String(post.id)
   );
 
   const resolved = resolveFeedPost(
     target,
-    currentPosts
+    posts
   );
 
   if (!resolved) {
@@ -1550,29 +933,21 @@ const handleCancelShare = () => {
 };
 
 // XÁC NHẬN CHIA SẺ
-const handleConfirmShare = () => {
+const handleConfirmShare = async () => {
   if (!sharingPost) return;
 
-  const currentPosts = getPosts();
-
-  const target = currentPosts.find(
+  const target = posts.find(
     (post) =>
       String(post.id) === String(sharingPost.id)
   );
 
-  if (!target || !canViewFeedPost(target, currentPosts)) {
+  if (!target || !canViewFeedPost(target, posts)) {
     alert("Bài viết không còn khả dụng!");
     handleCancelShare();
     return;
   }
 
-  const original = target.isShared
-    ? currentPosts.find(
-        (post) =>
-          String(post.id) ===
-          String(target.originalPost?.id)
-      )
-    : target;
+  const original = target.isShared ? target.originalPost : target;
 
   if (
     !original ||
@@ -1583,284 +958,37 @@ const handleConfirmShare = () => {
     return;
   }
 
-  const sharedPost = {
-    id: crypto.randomUUID(),
-
-    authorId: CURRENT_USER_ID,
-    author: CURRENT_USER,
-    authorUsername: currentAccount.username,
-
-    content: shareContent.trim(),
-    image: "",
-    images: [],
-
-    createdAt: new Date().toISOString(),
-    privacy: "public",
-
-    likedBy: [],
-    savedBy: [],
-    likeCount: 0,
-    comments: [],
-
-    isShared: true,
-
-    originalPost: {
-  id: original.id,
-},
-  };
-
-  const success = updatePosts((previous) => [
-  sharedPost,
-  ...previous,
-]);
-
-if (!success) return;
-
-// THÔNG BÁO CHO TÁC GIẢ BÀI VIẾT GỐC
-notifyPostOwner(
-  original,
-  "share",
-  "đã chia sẻ bài viết của bạn."
-);
-
-handleCancelShare();
-
-alert("Chia sẻ bài viết thành công!");
+  try {
+    await postApi.sharePost(target.id, shareContent.trim());
+    await refreshFeed();
+    handleCancelShare();
+    alert("Chia sẻ bài viết thành công!");
+  } catch (error) { alert(getApiErrorMessage(error)); }
 };
   
 
-// KIỂM TRA BÁO CÁO TRÙNG LẶP
-const hasPendingReport = (postId, reports) => {
-  return reports.some((report) => {
-    if (!report) return false;
-
-    const isSameReporter =
-      report.reporterId != null
-        ? String(report.reporterId) ===
-          String(CURRENT_USER_ID)
-        : report.reporter === CURRENT_USER;
-
-    return (
-      String(report.postId) === String(postId) &&
-      isSameReporter &&
-      (report.status || "pending") === "pending"
-    );
-  });
-};
-
-// MỞ POPUP BÁO CÁO
-const handleReportPost = (post) => {
-  if (!hasUserPermission()) {
-  alert("Bạn không có quyền báo cáo bài viết!");
-  return;
-}
-
-  const currentPosts = getPosts();
-
-  const target = currentPosts.find(
-    (item) =>
-      String(item.id) === String(post.id)
-  );
-
-  const resolved = resolveFeedPost(
-    target,
-    currentPosts
-  );
-
-  // KIỂM TRA QUYỀN XEM
-  if (!resolved) {
-    alert("Bài viết không còn khả dụng!");
-    return;
-  }
-
-  // KHÔNG CHO TỰ BÁO CÁO
-  if (isOwnPost(target)) {
-    alert("Bạn không thể báo cáo bài viết của mình!");
-    return;
-  }
-
-  // KIỂM TRA BÁO CÁO TRÙNG
-  if (hasPendingReport(target.id, getReports())) {
-    alert(
-      "Bạn đã báo cáo bài viết này và đang chờ xử lý!"
-    );
-    return;
-  }
-
-  setReportingPost(resolved);
-  setReportReason("");
-  setReportDetail("");
-};
-
-// ĐÓNG POPUP BÁO CÁO
-const handleCancelReport = () => {
-  setReportingPost(null);
-  setReportReason("");
-  setReportDetail("");
-};
-
-// GỬI BÁO CÁO
-const handleConfirmReport = () => {
+// Báo cáo trùng lặp được kiểm tra và xử lý ở backend.
+const handleConfirmReport = async () => {
   if (!reportingPost) return;
-
-  const account = getCurrentAccount();
-
- if (
-  !isUser(account) ||
-  String(account.id) !== String(CURRENT_USER_ID)
-) {
-    alert("Phiên đăng nhập không còn hợp lệ!");
-    handleCancelReport();
-    return;
-  }
-
-  // KIỂM TRA LÝ DO
   if (!reportReasons.includes(reportReason)) {
     alert("Vui lòng chọn lý do báo cáo!");
     return;
   }
-
   const detail = reportDetail.trim();
-
-  if (
-    reportReason === "Lý do khác" &&
-    !detail
-  ) {
+  if (reportReason === "Lý do khác" && !detail) {
     alert("Vui lòng nhập lý do cụ thể!");
     return;
   }
-
   if (detail.length > 500) {
     alert("Mô tả không được vượt quá 500 ký tự!");
     return;
   }
-
   try {
-    // ĐỌC BÀI VIẾT MỚI NHẤT
-    const currentPosts = getPosts();
-
-    const target = currentPosts.find(
-      (post) =>
-        String(post.id) ===
-        String(reportingPost.id)
-    );
-
-    const resolved = resolveFeedPost(
-      target,
-      currentPosts
-    );
-
-    // KIỂM TRA LẠI QUYỀN XEM
-    if (!resolved) {
-      alert("Bài viết không còn khả dụng!");
-      handleCancelReport();
-      return;
-    }
-
-    // KIỂM TRA QUYỀN SỞ HỮU
-    if (isOwnPost(target)) {
-      alert(
-        "Bạn không thể báo cáo bài viết của mình!"
-      );
-      handleCancelReport();
-      return;
-    }
-
-    // ĐỌC DANH SÁCH BÁO CÁO MỚI NHẤT
-    const reports = getReports();
-
-    if (hasPendingReport(target.id, reports)) {
-      alert(
-        "Báo cáo của bạn đang chờ xử lý!"
-      );
-      handleCancelReport();
-      return;
-    }
-
-    // XÁC ĐỊNH CHỦ BÀI VIẾT
-    const author = findAuthorAccount(
-      target.author,
-      target.authorId
-    );
-
-    const images = getPostImages(target);
-
-    // TẠO BÁO CÁO
-    const newReport = {
-      id: crypto.randomUUID(),
-
-      postId: target.id,
-
-      postAuthorId:
-        target.authorId ?? author?.id ?? null,
-
-      postAuthor: target.author || "Người dùng",
-
-      postContent: target.content || "",
-
-      postImage: images[0] || "",
-      postImages: images,
-
-      postPrivacy: target.privacy || "public",
-
-      isShared: Boolean(target.isShared),
-
-      originalPostId: target.isShared
-        ? target.originalPost?.id ?? null
-        : null,
-
-      reporterId: account.id,
-      reporter: account.fullName,
-      reporterUsername: account.username,
-
-      reason: reportReason,
-      detail: detail,
-
-      status: "pending",
-
-      createdAt: new Date().toISOString(),
-
-      processedAt: null,
-      processedById: null,
-      processedBy: null,
-      action: null,
-    };
-
-    // ĐỒNG BỘ BÀI VIẾT MẪU NẾU CHƯA ĐƯỢC LƯU
-if (localStorage.getItem(POSTS_KEY) === null) {
-  localStorage.setItem(
-    POSTS_KEY,
-    JSON.stringify(currentPosts)
-  );
-
-  window.dispatchEvent(new Event(POSTS_EVENT));
-}
-
-// LƯU BÁO CÁO
-localStorage.setItem(
-  REPORTS_KEY,
-  JSON.stringify([newReport, ...reports])
-);
-
-    // ĐỒNG BỘ VỚI TRANG QUẢN TRỊ
-    window.dispatchEvent(
-      new Event(REPORTS_EVENT)
-    );
-
+    await postApi.reportPost(reportingPost.id, detail ? `${reportReason}: ${detail}` : reportReason);
     handleCancelReport();
-
-    alert(
-      "Báo cáo của bạn đã được ghi nhận. Quản trị viên sẽ xem xét và xử lý!"
-    );
+    alert("Báo cáo của bạn đã được ghi nhận.");
   } catch (error) {
-    console.error(
-      "Lỗi khi lưu báo cáo:",
-      error
-    );
-
-    alert(
-      "Không thể lưu báo cáo. Vui lòng thử lại!"
-    );
+    alert(getApiErrorMessage(error));
   }
 };
 
@@ -1877,48 +1005,33 @@ const handleOpenContact = (user) => {
 };
 
 // GỬI LỜI MỜI KẾT BẠN
-const handleFeedAddFriend = (user) => {
+const handleFeedAddFriend = async (user) => {
   if (!canInteractWithUser(user)) {
     alert("Không thể kết bạn với người dùng này!");
     return;
   }
 
-  if (getFriendStatus(user.id) !== "none") {
+  if (getFeedFriendStatus(user) !== "none") {
     return;
   }
 
-  if (!sendFriendRequest(user.id)) {
-    alert("Không thể gửi lời mời kết bạn!");
-    return;
-  }
-
-  setFriendRefresh((previous) => previous + 1);
+  try { await friendApi.sendFriendRequest(user.id); await refreshSocialGraph(); }
+  catch (error) { alert(getApiErrorMessage(error)); }
 };
 
 // HỦY LỜI MỜI KẾT BẠN
-const handleFeedCancelRequest = (user) => {
+const handleFeedCancelRequest = async (user) => {
   if (!canInteractWithUser(user)) {
     return;
   }
 
-  const relationship = getRelationship(
-    CURRENT_USER_ID,
-    user.id
-  );
-
-  if (
-    !relationship ||
-    getFriendStatus(user.id) !== "sent"
-  ) {
-    return;
-  }
-
-  if (!cancelFriendRequest(relationship.id)) {
-    alert("Không thể hủy lời mời kết bạn!");
-    return;
-  }
-
-  setFriendRefresh((previous) => previous + 1);
+  try {
+    const page = await friendApi.getSentFriendRequests({ page: 0, size: 100 });
+    const request = pageContent(page).find((item) => String(item.user?.id) === String(user.id));
+    if (!request) return;
+    await friendApi.cancelFriendRequest(request.id);
+    await refreshSocialGraph();
+  } catch (error) { alert(getApiErrorMessage(error)); }
 };
 
 // XÓA GỢI Ý KẾT BẠN
@@ -1956,16 +1069,14 @@ const handleHideSuggestion = (user) => {
   setHiddenSuggestions(updated);
 };
   const openPostDetail = (post) => {
-  const currentPosts = getPosts();
-
-  const target = currentPosts.find(
+  const target = posts.find(
     (item) =>
       String(item.id) === String(post.id)
   );
 
   const resolved = resolveFeedPost(
     target,
-    currentPosts
+    posts
   );
 
   if (!resolved) {
@@ -1974,27 +1085,28 @@ const handleHideSuggestion = (user) => {
   }
 
   setSelectedPost(resolved);
+  postApi.getComments(resolved.id, { page: 0, size: 20 })
+    .then((page) => {
+      const comments = pageContent(page).map(toCommentView).filter(Boolean);
+      setPosts((current) => current.map((item) => String(item.id) === String(resolved.id) ? { ...item, comments } : item));
+      setSelectedPost((current) => current && String(current.id) === String(resolved.id) ? { ...current, comments } : current);
+    })
+    .catch((error) => alert(getApiErrorMessage(error)));
 };
   const goToProfile = (name, authorId) => {
   if (!hasUserPermission()) return;
 
-  const account = findAuthorAccount(name, authorId);
-
-  if (account && !isUser(account)) {
-    alert("Hồ sơ này không khả dụng!");
-    return;
-  }
-  if (!account) {
+  if (!authorId) {
     navigate(`/profile?user=${encodeURIComponent(name || "")}`);
     return;
   }
 
-  if (String(account.id) === String(CURRENT_USER_ID)) {
+  if (String(authorId) === String(CURRENT_USER_ID)) {
     navigate("/profile");
     return;
   }
 
-  navigate(`/profile?userId=${account.id}`);
+  navigate(`/profile?userId=${authorId}`);
 };
   const getPostImages = (post) => post.images?.length ? post.images : (post.image ? [post.image] : []);
 
@@ -2002,6 +1114,9 @@ const handleHideSuggestion = (user) => {
     <div className="feed-content-layout">
       {/* CỘT GIỮA */}
       <main className="facebook-feed">
+
+        {feedError && <p role="alert" className="profile-field-error">{feedError}</p>}
+        {feedLoading && <p role="status">Đang tải bảng tin…</p>}
 
         
 {/* TẠO BÀI VIẾT */}
@@ -2518,16 +1633,12 @@ const handleHideSuggestion = (user) => {
 
         {/* DANH SÁCH BÀI VIẾT */}
         <div className="post-list">
-          {visiblePosts.length === 0 ? (
+          {!feedLoading && visiblePosts.length === 0 ? (
             <div className="empty-post">
               Chưa có bài viết nào. Hãy chia sẻ điều gì đó nhé!
             </div>
           ) : (
             visiblePosts.map((post) => {
-              const comments = Array.isArray(post.comments)
-                ? post.comments
-                : [];
-
               const originalPost = post.originalPost || post;
 
               return (
@@ -2651,9 +1762,7 @@ const handleHideSuggestion = (user) => {
 <div className="post-character-count">
   {editingContent.length}/3000
 </div>
-                        <label className="edit-media-picker">＋ Thêm ảnh/video
-                          <input type="file" accept="image/*" multiple hidden onChange={(e) => { readImageFiles(e.target.files, setEditingImages, editingImages); e.target.value = ""; }} />
-                        </label>
+                        <small>Thay đổi ảnh/video trong bài viết đang được hỗ trợ ở phiên bản BE kế tiếp.</small>
                         <div className="image-preview-grid">{editingImages.map((src, index) => <div className="image-preview-container" key={index}><button type="button" className="remove-image-button" onClick={() => setEditingImages((prev) => prev.filter((_, i) => i !== index))}>✕</button><img src={src} alt={`Ảnh ${index + 1}`} className="image-preview" /></div>)}</div>
                         <div className="edit-post-actions">
                           <button
@@ -2728,7 +1837,7 @@ const handleHideSuggestion = (user) => {
                       👍 {Number(post.likeCount) || 0} lượt thích
                     </span>
 
-                    <span onClick={() => openPostDetail(post)} className="post-stat-clickable">{comments.length} bình luận</span>
+                    <span onClick={() => openPostDetail(post)} className="post-stat-clickable">{post.commentCount ?? comments.length} bình luận</span>
                   </div>
 
                   {/* TƯƠNG TÁC */}
@@ -2756,117 +1865,6 @@ const handleHideSuggestion = (user) => {
                     </button>
                   </div>
 
-                  {/* BÌNH LUẬN */}
-                  {openComments[post.id] && (
-                    <div className="facebook-comments">
-                      {comments.map((comment) => (
-                        <div
-                          className="comment-item"
-                          key={comment.id}
-                        >
-                          <button type="button" className="comment-avatar profile-link-button" onClick={() => goToProfile(comment.author, comment.authorId)}>
-                           {renderAvatar(comment.author)}
-                          </button>
-
-                          <div className="comment-content">
-                            <strong className="clickable-author" onClick={() => goToProfile(comment.author, comment.authorId)}>
-                              {displayName(comment.author)}
-                            </strong>
-
-                            {editingCommentId === comment.id ? (
-                              <div className="edit-comment-area">
-                                <input
-                                  type="text"
-                                  value={editingCommentContent}
-                                  onChange={(e) =>
-                                    setEditingCommentContent(e.target.value)
-                                  }
-                                  autoFocus
-                                />
-
-                                <div className="edit-comment-actions">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleUpdateComment(
-                                        post.id,
-                                        comment.id
-                                      )
-                                    }
-                                  >
-                                    Lưu
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={handleCancelEditComment}
-                                  >
-                                    Hủy
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <p className="post-text-clickable" onClick={() => openPostDetail(post)}>{comment.content}</p>
-                            )}
-
-                            {isOwnComment(comment) &&
-                              editingCommentId !== comment.id && (
-                                <div className="comment-actions">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleEditComment(comment)
-                                    }
-                                  >
-                                    Chỉnh sửa
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleDeleteComment(
-                                        post.id,
-                                        comment.id
-                                      )
-                                    }
-                                  >
-                                    Xóa
-                                  </button>
-                                </div>
-                              )}
-                          </div>
-                        </div>
-                      ))}
-
-                      {/* NHẬP BÌNH LUẬN */}
-                      <div className="comment-input-area">
-                        <input
-                          type="text"
-                          placeholder="Viết bình luận..."
-                          value={commentInputs[post.id] || ""}
-                          onChange={(e) =>
-                            handleCommentChange(
-                              post.id,
-                              e.target.value
-                            )
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              handleAddComment(post.id);
-                            }
-                          }}
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => handleAddComment(post.id)}
-                        >
-                          Gửi
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </article>
               );
             })
@@ -3009,7 +2007,7 @@ const handleHideSuggestion = (user) => {
       {/* DANH SÁCH BÌNH LUẬN */}
       <div className="post-detail-comments">
         <h3>
-          Bình luận ({(selectedPost.comments || []).length})
+          Bình luận ({selectedPost.commentCount ?? (selectedPost.comments || []).length})
         </h3>
 
         {(selectedPost.comments || []).length === 0 && (

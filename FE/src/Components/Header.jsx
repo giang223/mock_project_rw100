@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useAuth } from "../context/auth";
 
 import {
   MOCK_ACCOUNTS,
@@ -7,7 +8,6 @@ import {
   getCurrentAccount,
   switchMockAccount,
   logoutMockAccount,
-  readAccountData,
   isAdmin,
   isUser,
 } from "../utils/mockAccounts";
@@ -16,7 +16,6 @@ import {
   getUnreadCount,
   UPDATE_EVENT as NOTIFICATION_EVENT,
 } from "../Pages/notification/notificationUtils";
-const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
 
 // LẤY TÀI KHOẢN HIỆN TẠI
@@ -26,37 +25,7 @@ function readCurrentAccount() {
 
 // ĐỌC THÔNG TIN CÁ NHÂN
 function readProfile(account = readCurrentAccount()) {
-
-  const defaultProfile = {
-    ...account,
-    avatar: account.avatar || "",
-  };
-
-  try {
-    // GIỮ LẠI HỒ SƠ CŨ CỦA TÀI KHOẢN A
-    const legacyProfile =
-      account.id === 1
-        ? JSON.parse(
-            localStorage.getItem(PROFILE_KEY) || "{}"
-          )
-        : {};
-
-    const savedProfile = readAccountData(
-      PROFILE_KEY,
-      legacyProfile,
-      account.id
-    );
-
-    return {
-      ...defaultProfile,
-      ...savedProfile,
-      id: account.id,
-      username: account.username,
-      email: account.email,
-    };
-  } catch {
-    return defaultProfile;
-  }
+  return { ...account, avatar: account.avatar || "", cover: account.cover || "" };
 }
 
 // LẤY MÀU AVATAR THEO TÀI KHOẢN
@@ -89,12 +58,12 @@ function getAvatarLetter(name) {
 
 function Header() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const [currentAccount, setCurrentAccount] =
     useState(readCurrentAccount);
 
-  const [unreadCount, setUnreadCount] =
-    useState(getUnreadCount);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const [searchText, setSearchText] = useState("");
 
@@ -123,7 +92,7 @@ function Header() {
     const refreshData = () => {
       setCurrentAccount(readCurrentAccount());
       setProfile(readProfile());
-      setUnreadCount(getUnreadCount());
+      getUnreadCount().then(setUnreadCount).catch(() => setUnreadCount(0));
     };
 
     refreshData();
@@ -189,6 +158,7 @@ function Header() {
 
   // CHUYỂN ĐỔI TÀI KHOẢN
 const handleSwitchAccount = (account) => {
+  if (user || import.meta.env.VITE_DEMO_AUTH_ENABLED !== "true") return;
   if (!account) return;
 
   if (!isUser(account) && !isAdmin(account)) {
@@ -220,15 +190,17 @@ const handleSwitchAccount = (account) => {
   window.location.replace(targetPath);
 };
   // ĐĂNG XUẤT
-  const handleLogout = () => {
-    const confirmed = window.confirm(
-      "Bạn có chắc chắn muốn đăng xuất không?"
-    );
+  const handleLogout = async () => {
+    const confirmed = window.confirm("Bạn có chắc chắn muốn đăng xuất không?");
 
     if (!confirmed) return;
 
     try {
-      logoutMockAccount();
+      if (user) {
+        await logout();
+      } else {
+        logoutMockAccount();
+      }
 
       setShowAccountMenu(false);
 
@@ -455,6 +427,8 @@ if (!isUser(currentAccount)) {
 
               <div className="account-menu-divider" />
 
+              {!user && import.meta.env.VITE_DEMO_AUTH_ENABLED === "true" && (
+                <>
               {/* CHUYỂN ĐỔI TÀI KHOẢN */}
               <h4 className="account-menu-title">
                 Chuyển đổi tài khoản
@@ -517,6 +491,8 @@ if (!isUser(currentAccount)) {
               </div>
 
               <div className="account-menu-divider" />
+                </>
+              )}
 
               {/* ĐĂNG XUẤT */}
               <button
@@ -532,7 +508,7 @@ if (!isUser(currentAccount)) {
               </button>
 
               <p className="account-menu-note">
-                MiniSocial · Chế độ kiểm thử Frontend
+                {user ? "MiniSocial · Phiên đăng nhập bảo mật" : "MiniSocial · Chế độ kiểm thử Frontend"}
               </p>
 
             </div>

@@ -5,47 +5,15 @@ import {
   MOCK_ACCOUNTS,
   ACCOUNT_EVENT,
   getCurrentAccount,
-  readAccountData,
   isUser,
 } from "../utils/mockAccounts";
 
-const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
 // ĐỌC THÔNG TIN TÀI KHOẢN HIỆN TẠI
 function readProfile() {
   const account =
     getCurrentAccount() || MOCK_ACCOUNTS[0];
-
-  const defaultProfile = {
-    ...account,
-    avatar: account.avatar || "",
-  };
-
-  try {
-    // GIỮ LẠI HỒ SƠ CŨ CỦA TÀI KHOẢN A
-    const legacyProfile =
-      account.id === 1
-        ? JSON.parse(
-            localStorage.getItem(PROFILE_KEY) || "{}"
-          )
-        : {};
-
-    const savedProfile = readAccountData(
-      PROFILE_KEY,
-      legacyProfile,
-      account.id
-    );
-
-    return {
-      ...defaultProfile,
-      ...savedProfile,
-      id: account.id,
-      username: account.username,
-      email: account.email,
-    };
-  } catch {
-    return defaultProfile;
-  }
+  return { ...account, avatar: account.avatar || account.avatarUrl || "", cover: account.cover || account.coverUrl || "" };
 }
 
 function Sidebar() {

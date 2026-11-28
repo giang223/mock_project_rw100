@@ -1,76 +1,60 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/auth";
+import { getApiErrorMessage } from "../../api/http";
+import { getMyProfile, updateMyProfile, uploadAvatar, uploadCover } from "../../api/users";
+import { toUserView } from "../../api/adapters";
 
-import {
-  MOCK_ACCOUNTS,
-  getCurrentAccount,
-  readAccountData,
-  saveAccountData,
-} from "../../utils/mockAccounts";
-
-const PROFILE_KEY = "miniSocialProfile";
 const PROFILE_EVENT = "miniSocialProfileUpdated";
 
-// ĐỌC THÔNG TIN CÁ NHÂN THEO TÀI KHOẢN
-function readProfile() {
-  const account =
-    getCurrentAccount() || MOCK_ACCOUNTS[0];
+const emptyProfile = { fullName: "", username: "", email: "", phone: "", birthday: "", address: "", gender: "", bio: "", avatar: "", cover: "" };
 
-  const defaultProfile = {
-    phone: "",
-    birthday: "",
-    address: "",
-    gender: "",
-    bio: "",
-    avatar: "",
-    cover: "",
-    ...account,
+const mapProfileToForm = (profile) => {
+  const user = toUserView(profile) || {};
+
+  return {
+    ...emptyProfile,
+    ...user,
+    fullName: user.fullName ?? "",
+    username: user.username ?? "",
+    email: user.email ?? "",
+    phone: user.phone ?? "",
+    birthday: profile?.birthday ?? "",
+    address: user.address ?? "",
+    gender: user.gender ?? "",
+    bio: user.bio ?? "",
+    avatar: user.avatar ?? "",
+    cover: user.cover ?? "",
   };
-
-  try {
-    // GIỮ LẠI THÔNG TIN CŨ CỦA NGUYỄN VĂN A
-    const legacyProfile =
-      account.id === 1
-        ? JSON.parse(
-            localStorage.getItem(PROFILE_KEY) || "{}"
-          )
-        : {};
-
-    const savedProfile = readAccountData(
-      PROFILE_KEY,
-      legacyProfile,
-      account.id
-    );
-
-    const profile = {
-      ...defaultProfile,
-      ...savedProfile,
-      id: account.id,
-      username: account.username,
-      email: account.email,
-    };
-
-    // CHUYỂN NGÀY SINH CŨ SANG YYYY-MM-DD
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(profile.birthday)) {
-      const [day, month, year] =
-        profile.birthday.split("/");
-
-      profile.birthday = `${year}-${month}-${day}`;
-    }
-
-    return profile;
-  } catch {
-    return defaultProfile;
-  }
-}
+};
 
 function EditProfile() {
   const navigate = useNavigate();
-
-  const [formData, setFormData] = useState(readProfile);
+  const { updateUser } = useAuth();
+  const [formData, setFormData] = useState(emptyProfile);
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [coverFile, setCoverFile] = useState(null);
+  const [serverImages, setServerImages] = useState({ avatar: "", cover: "" });
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getMyProfile()
+      .then((profile) => {
+        if (active) {
+          const mapped = mapProfileToForm(profile);
+          setFormData(mapped);
+          setServerImages({ avatar: mapped.avatar || "", cover: mapped.cover || "" });
+        }
+      })
+      .catch((error) => {
+        if (active) setLoadError(getApiErrorMessage(error));
+      });
+    return () => { active = false; };
+  }, []);
 
   // THAY ĐỔI THÔNG TIN
   const handleChange = (event) => {
@@ -105,6 +89,8 @@ function EditProfile() {
   return;
 }
 
+    if (field === "avatar") setAvatarFile(file);
+    if (field === "cover") setCoverFile(file);
     setIsLoading(true);
 
     const reader = new FileReader();
@@ -128,9 +114,16 @@ function EditProfile() {
 
   // XÓA HÌNH ẢNH
   const handleRemoveImage = (field) => {
+  const hasPendingUpload = field === "avatar" ? avatarFile : coverFile;
+  if (field === "avatar" && avatarFile) setAvatarFile(null);
+  if (field === "cover" && coverFile) setCoverFile(null);
+  if (!hasPendingUpload) {
+    alert("Backend hiện chưa có API xóa ảnh hồ sơ. Bạn có thể tải ảnh khác lên để thay thế.");
+    return;
+  }
   setFormData((previous) => ({
     ...previous,
-    [field]: "",
+    [field]: serverImages[field],
   }));
 };
 
@@ -188,73 +181,43 @@ function EditProfile() {
 };
 
 // LƯU THÔNG TIN RIÊNG CHO TỪNG TÀI KHOẢN
-const handleSubmit = (event) => {
+const handleSubmit = async (event) => {
   event.preventDefault();
 
   if (isLoading) return;
 
   if (!validate()) return;
 
-  const account = getCurrentAccount();
-
-  // KIỂM TRA PHIÊN ĐĂNG NHẬP
-  if (!account) {
-    alert("Vui lòng đăng nhập lại!");
-
-    navigate("/login", {
-      replace: true,
-    });
-
-    return;
-  }
-
-  // KIỂM TRA ĐÚNG TÀI KHOẢN ĐANG CHỈNH SỬA
-  if (String(formData.id) !== String(account.id)) {
-    alert("Tài khoản đã thay đổi. Vui lòng mở lại trang chỉnh sửa!");
-
+  setIsLoading(true);
+  setLoadError("");
+  try {
+    const payload = {
+      fullName: formData.fullName.trim(),
+      username: formData.username?.trim() || null,
+      phone: formData.phone.trim() || null,
+      birthday: formData.birthday || null,
+      gender: ({ Nam: "MALE", Nữ: "FEMALE", Khác: "OTHER" })[formData.gender] || null,
+      address: formData.address.trim() || null,
+      bio: formData.bio.trim() || null,
+      isPrivate: Boolean(formData.isPrivate),
+    };
+    let updated = await updateMyProfile(payload);
+    if (avatarFile) updated = await uploadAvatar(avatarFile);
+    if (coverFile) updated = await uploadCover(coverFile);
+    const mapped = mapProfileToForm(updated);
+    setFormData(mapped);
+    setServerImages({ avatar: mapped.avatar || "", cover: mapped.cover || "" });
+    setAvatarFile(null);
+    setCoverFile(null);
+    updateUser(updated);
+    window.dispatchEvent(new Event(PROFILE_EVENT));
+    alert("Cập nhật thông tin thành công!");
     navigate("/profile");
-
-    return;
+  } catch (error) {
+    setLoadError(getApiErrorMessage(error));
+  } finally {
+    setIsLoading(false);
   }
-
-  const updatedProfile = {
-    ...formData,
-
-    id: account.id,
-    username: account.username,
-    email: account.email,
-
-    fullName: formData.fullName.trim(),
-    phone: formData.phone.trim(),
-    address: formData.address.trim(),
-    bio: formData.bio.trim(),
-
-    updatedAt: new Date().toISOString(),
-  };
-
-  // LƯU HỒ SƠ THEO ID TÀI KHOẢN
-  const success = saveAccountData(
-    PROFILE_KEY,
-    updatedProfile,
-    account.id
-  );
-
-  if (!success) {
-    alert(
-      "Không thể lưu thông tin. Bộ nhớ trình duyệt có thể đã đầy!"
-    );
-
-    return;
-  }
-
-  // ĐỒNG BỘ HEADER, SIDEBAR VÀ PROFILE
-  window.dispatchEvent(
-    new Event(PROFILE_EVENT)
-  );
-
-  alert("Cập nhật thông tin thành công!");
-
-  navigate("/profile");
 };
 
   return (
@@ -265,6 +228,8 @@ const handleSubmit = (event) => {
         <p className="edit-subtitle">
           Cập nhật thông tin cá nhân của bạn.
         </p>
+
+        {loadError && <p className="profile-field-error" role="alert">{loadError}</p>}
 
         <form onSubmit={handleSubmit}>
           {/* ẢNH BÌA */}
@@ -511,7 +476,7 @@ const handleSubmit = (event) => {
               />
 
               <div className="profile-character-count">
-                {formData.bio.length}/500
+                {(formData.bio ?? "").length}/500
               </div>
 
               {errors.bio && (
@@ -537,7 +502,7 @@ const handleSubmit = (event) => {
               disabled={isLoading}
             >
               {isLoading
-                ? "Đang đọc ảnh..."
+                ? "Đang lưu..."
                 : "Lưu thay đổi"}
             </button>
           </div>

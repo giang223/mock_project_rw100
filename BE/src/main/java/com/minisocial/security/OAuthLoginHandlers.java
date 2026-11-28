@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpHeaders;
@@ -27,6 +28,7 @@ import java.util.Locale;
 import java.util.Map;
 
 @Component
+@ConditionalOnProperty(prefix = "app.auth.oauth", name = "enabled", havingValue = "true")
 @Slf4j
 public class OAuthLoginHandlers implements AuthenticationSuccessHandler, AuthenticationFailureHandler {
 

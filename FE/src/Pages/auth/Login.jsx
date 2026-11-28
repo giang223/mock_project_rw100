@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/auth";
+import { getApiErrorMessage } from "../../api/http";
 
 import {
   MOCK_ACCOUNTS,
@@ -10,6 +12,8 @@ import {
 
 function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login, isInitializing } = useAuth();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -18,8 +22,9 @@ function Login() {
 
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
-  const [submitMessage, setSubmitMessage] = useState("");
+  const [submitMessage, setSubmitMessage] = useState(location.state?.authMessage || "");
   const [selectedAccount, setSelectedAccount] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // XỬ LÝ NHẬP DỮ LIỆU
   const handleChange = (event) => {
@@ -62,40 +67,28 @@ function Login() {
   };
 
   // ĐĂNG NHẬP
-const handleLogin = (event) => {
-  event.preventDefault();
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    setSubmitMessage("");
+    if (!validateForm()) return;
 
-  setSubmitMessage("");
-
-  if (!validateForm()) return;
-
-  const result = loginMockAccount(
-    formData.email,
-    formData.password
-  );
-
-  if (!result.success) {
-    setSubmitMessage(result.message);
-    return;
-  }
-
-  setFormData({
-    email: "",
-    password: "",
-  });
-
-  setShowPassword(false);
-
-  // ĐIỀU HƯỚNG THEO VAI TRÒ
-  navigate(
-    isAdmin(result.account)
-      ? "/admin/reports"
-      : "/feed",
-    {
-      replace: true,
+    setIsSubmitting(true);
+    try {
+      const session = await login({
+        email: formData.email.trim(),
+        password: formData.password,
+      });
+      const from = location.state?.from;
+      const destination = from?.pathname?.startsWith("/") && !from.pathname.startsWith("//")
+        ? `${from.pathname}${from.search || ""}${from.hash || ""}`
+        : session.user.role === "ADMIN" ? "/admin/reports" : "/feed";
+      navigate(destination, { replace: true });
+    } catch (error) {
+      setSubmitMessage(getApiErrorMessage(error, "Email hoặc mật khẩu không đúng."));
+    } finally {
+      setIsSubmitting(false);
     }
-  );
-};
+  };
   // CHỌN TÀI KHOẢN DEMO
   const handleSelectAccount = (event) => {
     const id = event.target.value;
@@ -123,43 +116,23 @@ const handleLogin = (event) => {
     });
   };
 
-  // ĐĂNG NHẬP NHANH
-const handleDemoLogin = () => {
-  setErrors({});
-  setSubmitMessage("");
-
-  const account = MOCK_ACCOUNTS.find(
-    (item) =>
-      String(item.id) === selectedAccount
-  );
-
-  if (!account) {
-    setSubmitMessage(
-      "Vui lòng chọn tài khoản demo!"
-    );
-    return;
-  }
-
-  const result = loginMockAccount(
-    account.email,
-    MOCK_PASSWORD
-  );
-
-  if (!result.success) {
-    setSubmitMessage(result.message);
-    return;
-  }
-
-  // ĐIỀU HƯỚNG THEO VAI TRÒ
-  navigate(
-    isAdmin(result.account)
-      ? "/admin/reports"
-      : "/feed",
-    {
-      replace: true,
+  // Mock sign-in is available only when explicitly enabled for UI demos.
+  const handleDemoLogin = () => {
+    if (import.meta.env.VITE_DEMO_AUTH_ENABLED !== "true") return;
+    setErrors({});
+    setSubmitMessage("");
+    const account = MOCK_ACCOUNTS.find((item) => String(item.id) === selectedAccount);
+    if (!account) {
+      setSubmitMessage("Vui lòng chọn tài khoản demo!");
+      return;
     }
-  );
-};
+    const result = loginMockAccount(account.email, MOCK_PASSWORD);
+    if (!result.success) {
+      setSubmitMessage(result.message);
+      return;
+    }
+    navigate(isAdmin(result.account) ? "/admin/reports" : "/feed", { replace: true });
+  };
 
   return (
     <div className="auth-container">
@@ -293,20 +266,16 @@ const handleDemoLogin = () => {
           <button
             type="submit"
             className="login-button"
+            disabled={isSubmitting || isInitializing}
           >
-            Đăng nhập
+            {isSubmitting ? "Đang đăng nhập…" : "Đăng nhập"}
           </button>
 
         </form>
 
-        {/* PHÂN CÁCH */}
-        <div className="login-divider">
-          <span />
-          <small>Hoặc</small>
-          <span />
-        </div>
-
-        {/* TÀI KHOẢN MOCK */}
+        {import.meta.env.VITE_DEMO_AUTH_ENABLED === "true" && (
+          <>
+        <div className="login-divider"><span /><small>Hoặc</small><span /></div>
         <div className="mock-account-panel">
 
           <div className="mock-account-heading">
@@ -380,6 +349,22 @@ const handleDemoLogin = () => {
           </p>
 
         </div>
+          </>
+        )}
+
+        {import.meta.env.VITE_OAUTH_ENABLED === "true" && (
+          <div className="oauth-login-actions">
+            {["google", "facebook"].map((provider) => (
+              <a
+                key={provider}
+                className="demo-login-button"
+                href={`${(import.meta.env.VITE_OAUTH_BASE_URL || "http://localhost:8080").replace(/\/$/, "")}/oauth2/authorization/${provider}`}
+              >
+                Tiếp tục với {provider === "google" ? "Google" : "Facebook"}
+              </a>
+            ))}
+          </div>
+        )}
 
         {/* ĐĂNG KÝ */}
         <div className="auth-footer">

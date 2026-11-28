@@ -1,6 +1,5 @@
 -- Allow several concurrent devices while retaining rotated token hashes so reuse can be detected.
 ALTER TABLE refresh_tokens
-    DROP INDEX uk_refresh_tokens_user,
     ADD COLUMN session_id VARCHAR(36) NULL AFTER user_id,
     ADD COLUMN revoked_at DATETIME(6) NULL AFTER expires_at,
     ADD COLUMN replaced_by_hash VARCHAR(64) NULL AFTER revoked_at;

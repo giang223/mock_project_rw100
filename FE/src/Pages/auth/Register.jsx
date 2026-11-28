@@ -1,6 +1,8 @@
 
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { register } from "../../api/auth";
+import { getApiErrorMessage } from "../../api/http";
 
 const initialForm = {
   fullName: "",
@@ -11,6 +13,7 @@ const initialForm = {
 
 function Register() {
   const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState(initialForm);
 
@@ -142,9 +145,9 @@ function Register() {
     } else if (formData.password.length < 8) {
       newErrors.password =
         "Mật khẩu phải có ít nhất 8 ký tự.";
-    } else if (formData.password.length > 128) {
+    } else if (formData.password.length > 100) {
       newErrors.password =
-        "Mật khẩu không được vượt quá 128 ký tự.";
+        "Mật khẩu không được vượt quá 100 ký tự.";
     } else if (
       !passwordRules.every((rule) => rule.valid)
     ) {
@@ -169,7 +172,7 @@ function Register() {
   };
 
   // XỬ LÝ ĐĂNG KÝ
-  const handleRegister = (event) => {
+  const handleRegister = async (event) => {
     event.preventDefault();
 
     setSubmitMessage("");
@@ -178,54 +181,24 @@ function Register() {
       return;
     }
 
-    /*
-      TODO: KẾT NỐI API REGISTER
-
-      1. Gửi fullName, email, password đến Backend.
-      2. Kiểm tra email đã tồn tại hay chưa.
-      3. Kiểm tra dữ liệu đăng ký.
-      4. Mã hóa mật khẩu tại Backend.
-      5. Tạo tài khoản chưa xác thực.
-      6. Gửi mã OTP đến email.
-      7. Chuyển đến trang Verify Email.
-    */
-
-    setSubmitMessage(
-      "Thông tin đăng ký hợp lệ. Chức năng đang chờ kết nối Backend. Tài khoản chưa được tạo và OTP chưa được gửi."
-    );
-
-    setFormData((previous) => ({
-      ...previous,
-      password: "",
-      confirmPassword: "",
-    }));
-
-    setShowPassword(false);
-    setShowConfirmPassword(false);
+    const email = formData.email.trim();
+    setIsSubmitting(true);
+    try {
+      await register({
+        fullName: formData.fullName.trim(),
+        email,
+        password: formData.password,
+      });
+      navigate("/verify-email", {
+        replace: true,
+        state: { email, notice: "Tài khoản đã được tạo. Hãy kiểm tra email để lấy mã xác minh." },
+      });
+    } catch (error) {
+      setSubmitMessage(getApiErrorMessage(error, "Không thể tạo tài khoản. Vui lòng thử lại."));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
-
-  // TRẢI NGHIỆM GIAO DIỆN XÁC THỰC EMAIL
-  const handleDemoVerify = () => {
-  const email = formData.email.trim();
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-  if (!emailRegex.test(email) || email.length > 254) {
-    setErrors((previous) => ({
-      ...previous,
-      email: "Vui lòng nhập email hợp lệ để thử giao diện OTP.",
-    }));
-
-    return;
-  }
-
-  navigate("/verify-email", {
-    state: {
-      email,
-      demo: true,
-    },
-  });
-};
   return (
     <div className="auth-container">
 
@@ -336,7 +309,7 @@ function Register() {
                 name="password"
                 placeholder="Tạo mật khẩu"
                 autoComplete="new-password"
-                maxLength={128}
+                maxLength={100}
                 value={formData.password}
                 onChange={handleChange}
                 className={
@@ -442,7 +415,7 @@ function Register() {
                 name="confirmPassword"
                 placeholder="Nhập lại mật khẩu"
                 autoComplete="new-password"
-                maxLength={128}
+                maxLength={100}
                 value={formData.confirmPassword}
                 onChange={handleChange}
                 className={
@@ -493,8 +466,9 @@ function Register() {
           <button
             type="submit"
             className="login-button"
+            disabled={isSubmitting}
           >
-            Đăng ký
+            {isSubmitting ? "Đang tạo tài khoản…" : "Đăng ký"}
           </button>
 
         </form>
@@ -505,19 +479,6 @@ function Register() {
           <small>Hoặc</small>
           <span />
         </div>
-
-        <button
-          type="button"
-          className="demo-login-button"
-          onClick={handleDemoVerify}
-        >
-          Trải nghiệm xác thực email
-        </button>
-
-        <p className="demo-login-note">
-          Chế độ demo chỉ dành cho kiểm thử giao diện OTP,
-          không tạo tài khoản thật.
-        </p>
 
         {/* CHUYỂN SANG ĐĂNG NHẬP */}
         <div className="auth-footer">
